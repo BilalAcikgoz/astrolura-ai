@@ -17,6 +17,7 @@ class Planet(Enum):
     NEPTUNE = swe.NEPTUNE
     PLUTO = swe.PLUTO
     NORTH_NODE = swe.TRUE_NODE
+    SOUTH_NODE = -1  # Calculated as North Node + 180°
     # CHIRON = swe.CHIRON  # Requires seas_18.se1 file
 
 # Planet symbols and names
@@ -32,6 +33,7 @@ PLANET_SYMBOLS = {
     Planet.NEPTUNE: "Neptune",
     Planet.PLUTO: "Pluto",
     Planet.NORTH_NODE: "North Node",
+    Planet.SOUTH_NODE: "South Node",
     # Planet.CHIRON: "Chiron",
 }
 
@@ -47,6 +49,7 @@ PLANET_NAMES = {
     Planet.NEPTUNE: "Neptun",
     Planet.PLUTO: "Pluto",
     Planet.NORTH_NODE: "Kuzey Node",
+    Planet.SOUTH_NODE: "Guney Node",
     # Planet.CHIRON: "Chiron",
 }
 
@@ -147,60 +150,90 @@ PLANET_RULERSHIPS = {
 class AspectType(Enum):
     # Aspect types and their angles
     CONJUNCTION = 0
-    OPPOSITION = 180
-    TRINE = 120
-    SQUARE = 90
-    SEXTILE = 60
-    QUINCUNX = 150
     SEMI_SEXTILE = 30
     SEMI_SQUARE = 45
+    SEXTILE = 60
+    QUINTILE = 72
+    SQUARE = 90
+    TRINE = 120
     SESQUIQUADRATE = 135
+    BIQUINTILE = 144
+    QUINCUNX = 150
+    OPPOSITION = 180
 
 ASPECT_NAMES = {
     AspectType.CONJUNCTION: "Kavusum",
-    AspectType.OPPOSITION: "Karsitlik",
-    AspectType.TRINE: "Ucgen",
+    AspectType.SEMI_SEXTILE: "Yari Altmislik",
+    AspectType.SEMI_SQUARE: "Yarim Kare",
+    AspectType.SEXTILE: "Altmislik",
+    AspectType.QUINTILE: "Beslik",
     AspectType.SQUARE: "Kare",
-    AspectType.SEXTILE: "Altigen",
-    AspectType.QUINCUNX: "Quincunx",
-    AspectType.SEMI_SEXTILE: "Yari Altigen",
-    AspectType.SEMI_SQUARE: "Yari Kare",
+    AspectType.TRINE: "Ucgen",
     AspectType.SESQUIQUADRATE: "Sesquiquadrate",
+    AspectType.BIQUINTILE: "Cift Beslik",
+    AspectType.QUINCUNX: "Birlesmeyen Aci",
+    AspectType.OPPOSITION: "Karsit",
 }
 
 ASPECT_SYMBOLS = {
     AspectType.CONJUNCTION: "Conjunction",
-    AspectType.OPPOSITION: "Opposition",
-    AspectType.TRINE: "Trine",
-    AspectType.SQUARE: "Square",
+    AspectType.SEMI_SEXTILE: "Semi-Sextile",
+    AspectType.SEMI_SQUARE: "Semi-Square",
     AspectType.SEXTILE: "Sextile",
+    AspectType.QUINTILE: "Quintile",
+    AspectType.SQUARE: "Square",
+    AspectType.TRINE: "Trine",
+    AspectType.SESQUIQUADRATE: "Sesquiquadrate",
+    AspectType.BIQUINTILE: "Bi-Quintile",
     AspectType.QUINCUNX: "Quincunx",
+    AspectType.OPPOSITION: "Opposition",
 }
 
-# Aspect orbs (in degrees)
+# Aspect orbs (in degrees) - Default maximum orbs for each aspect type
 ASPECT_ORBS = {
-    AspectType.CONJUNCTION: 8.0,
-    AspectType.OPPOSITION: 8.0,
-    AspectType.TRINE: 8.0,
-    AspectType.SQUARE: 7.0,
+    AspectType.CONJUNCTION: 10.0,
+    AspectType.SEMI_SEXTILE: 3.0,
+    AspectType.SEMI_SQUARE: 3.0,
     AspectType.SEXTILE: 6.0,
+    AspectType.QUINTILE: 2.0,
+    AspectType.SQUARE: 10.0,
+    AspectType.TRINE: 10.0,
+    AspectType.SESQUIQUADRATE: 3.0,
+    AspectType.BIQUINTILE: 2.0,
     AspectType.QUINCUNX: 3.0,
-    AspectType.SEMI_SEXTILE: 2.0,
-    AspectType.SEMI_SQUARE: 2.0,
-    AspectType.SESQUIQUADRATE: 2.0,
+    AspectType.OPPOSITION: 10.0,
+}
+
+# Planet orbs (in degrees) - Each planet has its own orb value
+# These are used to calculate the actual orb for an aspect between two planets
+PLANET_ORBS = {
+    Planet.SUN: 15.0,
+    Planet.MOON: 12.0,
+    Planet.MERCURY: 7.0,
+    Planet.VENUS: 7.0,
+    Planet.MARS: 8.0,
+    Planet.JUPITER: 9.0,
+    Planet.SATURN: 9.0,
+    Planet.URANUS: 5.0,
+    Planet.NEPTUNE: 5.0,
+    Planet.PLUTO: 5.0,
+    Planet.NORTH_NODE: 5.0,
+    Planet.SOUTH_NODE: 5.0,
 }
 
 # Aspect nature (harmonious or challenging)
 ASPECT_NATURE = {
     AspectType.CONJUNCTION: "notr",
-    AspectType.OPPOSITION: "zorlayici",
-    AspectType.TRINE: "uyumlu",
-    AspectType.SQUARE: "zorlayici",
-    AspectType.SEXTILE: "uyumlu",
-    AspectType.QUINCUNX: "karmasik",
     AspectType.SEMI_SEXTILE: "hafif",
     AspectType.SEMI_SQUARE: "hafif zorlayici",
+    AspectType.SEXTILE: "uyumlu",
+    AspectType.QUINTILE: "yaratici",
+    AspectType.SQUARE: "zorlayici",
+    AspectType.TRINE: "uyumlu",
     AspectType.SESQUIQUADRATE: "hafif zorlayici",
+    AspectType.BIQUINTILE: "yaratici",
+    AspectType.QUINCUNX: "karmasik",
+    AspectType.OPPOSITION: "zorlayici",
 }
 
 # House Systems
@@ -354,19 +387,31 @@ def calculate_aspect_angle(long1: float, long2: float) -> float:
         diff = 360 - diff
     return diff
 
-def get_aspect(long1: float, long2: float) -> Tuple[AspectType | None, float]:
+def get_aspect(long1: float, long2: float, planet1: Planet = None, planet2: Planet = None) -> Tuple[AspectType | None, float]:
     """
     Determine if two planets form an aspect
     Returns: (AspectType, orb) or (None, angle) if no aspect
+
+    If planet1 and planet2 are provided, uses their individual orbs.
+    Otherwise uses default aspect orbs.
     """
     angle = calculate_aspect_angle(long1, long2)
 
     for aspect_type, aspect_angle in AspectType.__members__.items():
         aspect = AspectType[aspect_type]
         ideal_angle = aspect.value
-        orb = ASPECT_ORBS[aspect]
 
-        if abs(angle - ideal_angle) <= orb:
+        # Calculate maximum allowed orb
+        if planet1 and planet2 and planet1 in PLANET_ORBS and planet2 in PLANET_ORBS:
+            # Use planet-specific orbs: smaller of (planet1_orb + planet2_orb) or default aspect orb
+            max_orb = min(
+                (PLANET_ORBS[planet1] + PLANET_ORBS[planet2]) / 2,
+                ASPECT_ORBS[aspect]
+            )
+        else:
+            max_orb = ASPECT_ORBS[aspect]
+
+        if abs(angle - ideal_angle) <= max_orb:
             actual_orb = abs(angle - ideal_angle)
             return aspect, actual_orb
 
