@@ -19,10 +19,12 @@ class PlanetPosition(BaseModel):
     latitude: float = Field(..., description="Ecliptic latitude in degrees")
     distance: float = Field(..., description="Distance from Earth in AU")
     speed: float = Field(..., description="Daily motion in degrees")
+    speed_display: str = Field(..., description="Formatted speed display (e.g., 00°57'13\")")
     sign: str = Field(..., description="Zodiac sign in Turkish")
     sign_en: str = Field(..., description="Zodiac sign in English")
     sign_symbol: str = Field(..., description="Zodiac sign symbol")
     degree_in_sign: float = Field(..., description="Degree within the sign (0-30)")
+    degree_display: str = Field(..., description="Formatted degree display (e.g., 8°57')")
     house: int = Field(..., description="House number (1-12)")
     retrograde: bool = Field(..., description="Is planet retrograde?")
     dignity: str = Field(..., description="Planet dignity (ruler, exalted, detriment, fall, neutral)")
@@ -36,16 +38,17 @@ class HouseInfo(BaseModel):
     sign_en: str = Field(..., description="Sign on the house cusp in English")
     sign_symbol: str = Field(..., description="Sign symbol")
     degree_in_sign: float = Field(..., description="Degree of cusp within the sign")
+    degree_display: str = Field(..., description="Formatted degree display (e.g., 8°57')")
 
 class AspectInfo(BaseModel):
     # Aspect between two planets
     planet1: str = Field(..., description="First planet name")
-    planet2: str = Field(..., description="Second planet name")
     aspect: str = Field(..., description="Aspect type in Turkish")
     aspect_en: str = Field(..., description="Aspect type in English")
     aspect_symbol: str = Field(..., description="Aspect symbol")
-    angle: float = Field(..., description="Actual angle between planets")
+    planet2: str = Field(..., description="Second planet name")
     orb: float = Field(..., description="Orb (difference from exact aspect)")
+    angle: float = Field(..., description="Exact aspect angle (e.g., 180 for opposition)")
     nature: str = Field(..., description="Aspect nature (harmonious, challenging, neutral)")
 
 class ElementBalance(BaseModel):
@@ -75,13 +78,11 @@ class ChartInfo(BaseModel):
 class BirthChartData(BaseModel):
     # Complete birth chart data
     chart_info: ChartInfo
-    planets: List[PlanetPosition]
+    planets: List[PlanetPosition]  # Includes all planets, Ascendant, and Midheaven
     houses: List[HouseInfo]
     aspects: List[AspectInfo]
     elements: ElementBalance
     qualities: QualityBalance
-    ascendant: PlanetPosition = Field(..., description="Ascendant (Rising sign)")
-    midheaven: PlanetPosition = Field(..., description="Midheaven (MC)")
 
 class BirthChartResponse(BaseModel):
     # Response for birth chart calculation
