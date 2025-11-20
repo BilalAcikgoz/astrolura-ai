@@ -64,6 +64,18 @@ class QualityBalance(BaseModel):
     fixed: float = Field(..., description="Fixed quality percentage")
     mutable: float = Field(..., description="Mutable quality percentage")
 
+class TraditionalDignityInfo(BaseModel):
+    planet: str = Field(..., description="Planet name in Turkish (row header)")
+    planet_symbol: str = Field(..., description="Planet symbol")
+    ruler: Optional[str] = Field(None, description="Planet symbol if in ruler dignity (+5)")
+    exaltation: Optional[str] = Field(None, description="Planet symbol if in exaltation (+4)")
+    triplicity: Optional[str] = Field(None, description="Planet symbol if in triplicity (+3)")
+    term: Optional[str] = Field(None, description="Planet symbol if in term (+2)")
+    face: Optional[str] = Field(None, description="Planet symbol if in face/decan (+1)")
+    detriment: Optional[str] = Field(None, description="Planet symbol if in detriment (-5)")
+    fall: Optional[str] = Field(None, description="Planet symbol if in fall (-4)")
+    score: int = Field(..., description="Total dignity score")
+
 class ChartInfo(BaseModel):
     # General chart information
     name: str
@@ -83,13 +95,28 @@ class BirthChartData(BaseModel):
     aspects: List[AspectInfo]
     elements: ElementBalance
     qualities: QualityBalance
+    dignities: Optional[List[TraditionalDignityInfo]] = Field(default_factory=list, description="Traditional planetary dignities (asaletler)")
+
+    # Keep these for backward compatibility (they're included in planets list)
+    @property
+    def ascendant(self) -> Optional[PlanetPosition]:
+        for planet in self.planets:
+            if planet.name == "Yukselen":
+                return planet
+        return None
+    
+    @property
+    def midheaven(self) -> Optional[PlanetPosition]:
+        for planet in self.planets:
+            if planet.name == "Orta Gogu":
+                return planet
+        return None
 
 class BirthChartResponse(BaseModel):
     # Response for birth chart calculation
     success: bool = True
     chart_id: str = Field(..., description="Unique identifier for this chart")
     chart_data: BirthChartData
-    chart_svg: Optional[str] = Field(None, description="SVG visualization (base64 encoded)")
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class InterpretationResponse(BaseModel):

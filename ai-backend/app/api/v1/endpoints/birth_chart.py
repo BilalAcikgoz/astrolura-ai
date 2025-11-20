@@ -1,15 +1,15 @@
-from fastapi import APIRouter, HTTPException, status, Response
+from fastapi import APIRouter, HTTPException, status
 from loguru import logger
 from typing import Dict
-
-from app.api.models.request import BirthChartRequest, BirthChartInterpretRequest
-from app.api.models.response import (
+ 
+from app.api.models import (
+    BirthChartRequest,
+    BirthChartInterpretRequest,
     BirthChartResponse,
     InterpretationResponse
 )
-from app.core.astrology.calculator import get_calculator
-from app.core.geocoding.service import GeocodingError
-from app.core.visualization import generate_birth_chart_svg
+from app.core.astrology import get_calculator
+from app.core.geocoding import GeocodingError
 
 router = APIRouter()
 
@@ -43,22 +43,13 @@ async def calculate_birth_chart(request: BirthChartRequest):
         # Cache the chart data
         chart_cache[chart_id] = chart_data.model_dump()
 
-        # Generate SVG chart visualization
-        try:
-            chart_svg = generate_birth_chart_svg(chart_data, language="en")
-            logger.info(f"Successfully generated SVG chart for {request.name}")
-        except Exception as svg_error:
-            logger.warning(f"Failed to generate SVG: {svg_error}")
-            chart_svg = None
-
         logger.info(f"Successfully calculated chart for {request.name}, ID: {chart_id}")
 
         # Return response
         return BirthChartResponse(
             success=True,
             chart_id=chart_id,
-            chart_data=chart_data,
-            chart_svg=chart_svg
+            chart_data=chart_data
         )
 
     except GeocodingError as e:
@@ -159,53 +150,6 @@ async def get_birth_chart(chart_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve birth chart: {str(e)}"
-        )
-
-@router.get(
-    "/birth-chart/{chart_id}/svg",
-    status_code=status.HTTP_200_OK,
-    summary="Get Birth Chart SVG",
-    description="Retrieve the SVG visualization of a calculated birth chart",
-    response_class=Response
-)
-async def get_birth_chart_svg(chart_id: str):
-    """
-    Get SVG visualization of a birth chart.
-    Opens directly in browser for viewing.
-    """
-    try:
-        if chart_id not in chart_cache:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Chart not found"
-            )
-
-        # Get chart data from cache
-        chart_data_dict = chart_cache[chart_id]
-
-        # Convert dict back to BirthChartData object
-        from app.api.models.response import BirthChartData
-        chart_data = BirthChartData(**chart_data_dict)
-
-        # Generate SVG
-        svg_content = generate_birth_chart_svg(chart_data, language="en")
-
-        # Return SVG with proper content type
-        return Response(
-            content=svg_content,
-            media_type="image/svg+xml",
-            headers={
-                "Content-Disposition": f'inline; filename="birth_chart_{chart_id}.svg"'
-            }
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error generating SVG: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate SVG: {str(e)}"
         )
 
 def _generate_placeholder_interpretation(
