@@ -10,13 +10,15 @@ from app.core.astrology.constants import (
     Planet, ZodiacSign, AspectType, HouseSystem, Dignity,
     PLANET_NAMES, PLANET_SYMBOLS, ZODIAC_NAMES, ZODIAC_SYMBOLS,
     ZODIAC_ELEMENTS, ZODIAC_QUALITIES, ASPECT_NAMES, ASPECT_SYMBOLS,
-    ASPECT_NATURE, HOUSE_NAMES, HOUSE_SYSTEM_NAMES,
-    get_zodiac_sign, get_degree_in_sign, get_planet_dignity, get_aspect
+    ASPECT_NATURE, HOUSE_NAMES, HOUSE_SYSTEM_NAMES, PLANET_RULERSHIPS,
+    get_zodiac_sign, get_degree_in_sign, get_planet_dignity, get_aspect,
+    get_triplicity_lord, get_term_lord, get_face_lord, PLANET_DIGNITIES
 )
 from app.core.geocoding.service import get_geocoding_service
 from app.api.models.response import (
     BirthChartData, ChartInfo, LocationInfo, PlanetPosition,
-    HouseInfo, AspectInfo, ElementBalance, QualityBalance
+    HouseInfo, AspectInfo, ElementBalance, QualityBalance, DignityDistribution,
+    EssentialDignitiesTable, EssentialDignityRow
 )
 
 logger = logging.getLogger(__name__)
@@ -94,12 +96,10 @@ class BirthChartCalculator:
             # Step 6: Calculate planet positions (with house assignments)
             planets = self._calculate_planets(julian_day, houses)
 
-            # Step 6.5: Add all angles to planets list
+            # Step 6.5: Add Ascendant and Midheaven to planets list
             # These angles are used in element/quality calculations
             planets.append(angles["ascendant"])
-            planets.append(angles["descendant"])
             planets.append(angles["midheaven"])
-            planets.append(angles["ic"])
 
             # Step 7: Calculate aspects
             aspects = self._calculate_aspects(planets)
@@ -107,6 +107,11 @@ class BirthChartCalculator:
             # Step 8: Calculate element and quality balance
             elements = self._calculate_element_balance(planets)
             qualities = self._calculate_quality_balance(planets)
+
+            # Step 8.5: Calculate essential dignities table (now called "dignities")
+            sun_data = next((p for p in planets if p.name == "Gunes"), None)
+            sun_longitude = sun_data.longitude if sun_data else 0.0
+            dignities = self._calculate_essential_dignities(planets, sun_longitude)
 
             # Step 9: Generate chart ID
             chart_id = str(uuid.uuid4())
@@ -127,7 +132,8 @@ class BirthChartCalculator:
                 houses=houses,
                 aspects=aspects,
                 elements=elements,
-                qualities=qualities
+                qualities=qualities,
+                dignities=dignities
             )
 
             logger.info(f"Successfully calculated birth chart for {name}, chart_id: {chart_id}")
@@ -328,6 +334,7 @@ class BirthChartCalculator:
     def _calculate_planets(self, julian_day: float, houses: List[HouseInfo]) -> List[PlanetPosition]:
         planet_positions = []
         north_node_longitude = None
+        north_node_speed = None
 
         for planet_enum in Planet:
             try:
@@ -342,9 +349,10 @@ class BirthChartCalculator:
                 distance = result[2]
                 speed = result[3]
 
-                # Store North Node longitude for South Node calculation
+                # Store North Node longitude and speed for South Node calculation
                 if planet_enum == Planet.NORTH_NODE:
                     north_node_longitude = longitude
+                    north_node_speed = speed
 
                 sign_enum = get_zodiac_sign(longitude)
                 degree_in_sign = get_degree_in_sign(longitude)
@@ -380,12 +388,14 @@ class BirthChartCalculator:
                 continue
 
         # Now calculate South Node (North Node + 180°)
-        if north_node_longitude is not None:
+        if north_node_longitude is not None and north_node_speed is not None:
             try:
                 south_node_longitude = (north_node_longitude + 180) % 360
+                south_node_speed = north_node_speed  # Same speed as North Node
                 sign_enum = get_zodiac_sign(south_node_longitude)
                 degree_in_sign = get_degree_in_sign(south_node_longitude)
                 planet_house = self._get_planet_house(south_node_longitude, houses)
+                is_retrograde = south_node_speed < 0
 
                 south_node = PlanetPosition(
                     name=PLANET_NAMES[Planet.SOUTH_NODE],
@@ -394,15 +404,15 @@ class BirthChartCalculator:
                     longitude=round(south_node_longitude, 4),
                     latitude=0.0,
                     distance=0.0,
-                    speed=0.0,
-                    speed_display=self._format_speed(0.0),
+                    speed=round(south_node_speed, 4),
+                    speed_display=self._format_speed(south_node_speed),
                     sign=ZODIAC_NAMES[sign_enum],
                     sign_en=sign_enum.name.title(),
                     sign_symbol=ZODIAC_SYMBOLS[sign_enum],
                     degree_in_sign=round(degree_in_sign, 2),
                     degree_display=self._format_degree(degree_in_sign),
                     house=planet_house,
-                    retrograde=False,
+                    retrograde=is_retrograde,
                     dignity="neutral"
                 )
                 planet_positions.append(south_node)
@@ -414,13 +424,23 @@ class BirthChartCalculator:
     def _calculate_aspects(self, planets: List[PlanetPosition]) -> List[AspectInfo]:
         aspects = []
 
+        # Major aspects only
+        major_aspects = {
+            AspectType.CONJUNCTION,
+            AspectType.OPPOSITION,
+            AspectType.TRINE,
+            AspectType.SQUARE,
+            AspectType.SEXTILE
+        }
+
+        # Maximum orb for filtering
+        MAX_ORB = 3.0
+
         # Create a reverse mapping from Turkish planet name to Planet enum
         planet_name_to_enum = {name: planet for planet, name in PLANET_NAMES.items()}
         # Handle angles (they use default orbs)
         planet_name_to_enum["Yukselen"] = None  # Ascendant
-        planet_name_to_enum["Inen"] = None  # Descendant
         planet_name_to_enum["Orta Gogu"] = None  # Midheaven
-        planet_name_to_enum["Gok Alti"] = None  # IC
 
         for i in range(len(planets)):
             for j in range(i + 1, len(planets)):
@@ -438,27 +458,29 @@ class BirthChartCalculator:
                     planet2_enum
                 )
 
-                if aspect_type is not None:
+                # Round orb first, then filter: only major aspects with orb < 3
+                orb_rounded = round(orb, 2)
+                if aspect_type is not None and aspect_type in major_aspects and orb_rounded < MAX_ORB:
                     aspect_info = AspectInfo(
                         planet1=planet1.name,
                         aspect=ASPECT_NAMES[aspect_type],
                         aspect_en=aspect_type.name.title().replace("_", " "),
                         aspect_symbol=ASPECT_SYMBOLS.get(aspect_type, ""),
                         planet2=planet2.name,
-                        orb=round(orb, 2),
+                        orb=orb_rounded,
                         angle=aspect_type.value,
                         nature=ASPECT_NATURE[aspect_type]
                     )
                     aspects.append(aspect_info)
 
-        logger.info(f"Calculated {len(aspects)} aspects")
+        logger.info(f"Calculated {len(aspects)} major aspects (orb < {MAX_ORB})")
         return aspects
 
     def _calculate_element_balance(self, planets: List[PlanetPosition]) -> ElementBalance:
         element_counts = {"ates": 0, "toprak": 0, "hava": 0, "su": 0}
 
-        # Use 15 points: 10 planets + North Node + 4 angles (ASC, DSC, MC, IC)
-        # Exclude: South Node only (it's the opposite of North Node)
+        # Use 13 points: 10 planets + North Node + 2 angles (ASC, MC)
+        # Exclude: South Node (it's the opposite of North Node)
         for planet in planets:
             # Skip South Node
             if planet.name == "Guney Node":
@@ -484,8 +506,8 @@ class BirthChartCalculator:
     def _calculate_quality_balance(self, planets: List[PlanetPosition]) -> QualityBalance:
         quality_counts = {"oncu": 0, "sabit": 0, "degisken": 0}
 
-        # Use 15 points: 10 planets + North Node + 4 angles (ASC, DSC, MC, IC)
-        # Exclude: South Node only (it's the opposite of North Node)
+        # Use 13 points: 10 planets + North Node + 2 angles (ASC, MC)
+        # Exclude: South Node (it's the opposite of North Node)
         for planet in planets:
             # Skip South Node
             if planet.name == "Guney Node":
@@ -506,6 +528,143 @@ class BirthChartCalculator:
             fixed=round(quality_counts["sabit"] / total * 100, 1),
             mutable=round(quality_counts["degisken"] / total * 100, 1)
         )
+
+    def _calculate_dignity_distribution(self, planets: List[PlanetPosition]) -> DignityDistribution:
+        dignity_lists = {
+            "ruler": [],
+            "exalted": [],
+            "detriment": [],
+            "fall": [],
+            "neutral": []
+        }
+
+        # Only consider actual planets (exclude angles and nodes)
+        planet_list = ["Gunes", "Ay", "Merkur", "Venus", "Mars", "Jupiter", "Saturn", "Uranus", "Neptun", "Pluto"]
+
+        for planet in planets:
+            if planet.name in planet_list:
+                dignity = planet.dignity
+                if dignity in dignity_lists:
+                    dignity_lists[dignity].append(planet.name_en)
+
+        return DignityDistribution(
+            ruler=dignity_lists["ruler"],
+            exalted=dignity_lists["exalted"],
+            detriment=dignity_lists["detriment"],
+            fall=dignity_lists["fall"],
+            neutral=dignity_lists["neutral"]
+        )
+
+    def _calculate_essential_dignities(self, planets: List[PlanetPosition], sun_longitude: float) -> EssentialDignitiesTable:
+        """
+        Calculate essential dignities table for all planets.
+        Shows which planet holds ruler/exaltation/triplicity/term/face/detriment/fall
+        for each planet's position, with scoring.
+        """
+        # Determine if day chart or night chart (Sun above or below horizon)
+        # For simplicity, we use Sun's position relative to IC/MC
+        # If Sun is in houses 7-12, it's a day chart; houses 1-6 is night chart
+        sun_data = next((p for p in planets if p.name == "Gunes"), None)
+        is_day_chart = sun_data and sun_data.house in [7, 8, 9, 10, 11, 12]
+
+        # Main planets to analyze - Classical 7 planets + modern planets (Uranus, Neptune, Pluto)
+        main_planets = [
+            Planet.SUN, Planet.MOON, Planet.MERCURY, Planet.VENUS, Planet.MARS,
+            Planet.JUPITER, Planet.SATURN, Planet.URANUS, Planet.NEPTUNE, Planet.PLUTO
+        ]
+
+        rows = []
+        total_score = 0
+
+        for planet_enum in main_planets:
+            # Find this planet's data in the planets list
+            planet_name_tr = PLANET_NAMES[planet_enum]
+            planet_data = next((p for p in planets if p.name == planet_name_tr), None)
+
+            if not planet_data:
+                continue
+
+            # Get sign and degree
+            sign_enum = get_zodiac_sign(planet_data.longitude)
+            degree_in_sign = get_degree_in_sign(planet_data.longitude)
+
+            # Initialize lists for each category
+            ruler_planets = []
+            exaltation_planets = []
+            triplicity_planets = []
+            term_planets = []
+            face_planets = []
+            detriment_planets = []
+            fall_planets = []
+            score = 0
+
+            # Find which planets hold each dignity at this sign/degree
+            # Ruler: Who rules this sign?
+            ruler = PLANET_RULERSHIPS.get(sign_enum)
+            if ruler:
+                ruler_planets.append(PLANET_SYMBOLS[ruler])
+                if ruler == planet_enum:
+                    score += 5
+
+            # Exaltation: Who is exalted in this sign?
+            for p, dignities in PLANET_DIGNITIES.items():
+                if dignities.get(sign_enum) == Dignity.EXALTED:
+                    exaltation_planets.append(PLANET_SYMBOLS[p])
+                    if p == planet_enum:
+                        score += 4
+
+            # Triplicity: Who is the triplicity lord?
+            triplicity_lord = get_triplicity_lord(sign_enum, is_day_chart)
+            if triplicity_lord:
+                triplicity_planets.append(PLANET_SYMBOLS[triplicity_lord])
+                if triplicity_lord == planet_enum:
+                    score += 3
+
+            # Term: Who is the term lord at this degree?
+            term_lord = get_term_lord(sign_enum, degree_in_sign)
+            if term_lord:
+                term_planets.append(PLANET_SYMBOLS[term_lord])
+                if term_lord == planet_enum:
+                    score += 2
+
+            # Face: Who is the face lord at this degree?
+            face_lord = get_face_lord(sign_enum, degree_in_sign)
+            if face_lord:
+                face_planets.append(PLANET_SYMBOLS[face_lord])
+                if face_lord == planet_enum:
+                    score += 1
+
+            # Detriment: Who is in detriment in this sign?
+            for p, dignities in PLANET_DIGNITIES.items():
+                if dignities.get(sign_enum) == Dignity.DETRIMENT:
+                    detriment_planets.append(PLANET_SYMBOLS[p])
+                    if p == planet_enum:
+                        score -= 5
+
+            # Fall: Who is in fall in this sign?
+            for p, dignities in PLANET_DIGNITIES.items():
+                if dignities.get(sign_enum) == Dignity.FALL:
+                    fall_planets.append(PLANET_SYMBOLS[p])
+                    if p == planet_enum:
+                        score -= 4
+
+            # Create row
+            row = EssentialDignityRow(
+                planet=planet_name_tr,
+                planet_en=PLANET_SYMBOLS[planet_enum],
+                ruler=ruler_planets,
+                exaltation=exaltation_planets,
+                triplicity=triplicity_planets,
+                term=term_planets,
+                face=face_planets,
+                detriment=detriment_planets,
+                fall=fall_planets,
+                score=score
+            )
+            rows.append(row)
+            total_score += score
+
+        return EssentialDignitiesTable(rows=rows, total_score=total_score)
 
 # Global calculator instance
 _calculator: Optional[BirthChartCalculator] = None

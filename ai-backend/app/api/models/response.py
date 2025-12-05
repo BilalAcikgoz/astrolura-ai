@@ -64,6 +64,32 @@ class QualityBalance(BaseModel):
     fixed: float = Field(..., description="Fixed quality percentage")
     mutable: float = Field(..., description="Mutable quality percentage")
 
+class DignityDistribution(BaseModel):
+    # Planetary dignity distribution in the chart
+    ruler: List[str] = Field(default_factory=list, description="Planets in rulership")
+    exalted: List[str] = Field(default_factory=list, description="Planets in exaltation")
+    detriment: List[str] = Field(default_factory=list, description="Planets in detriment")
+    fall: List[str] = Field(default_factory=list, description="Planets in fall")
+    neutral: List[str] = Field(default_factory=list, description="Planets in neutral dignity")
+
+class EssentialDignityRow(BaseModel):
+    # A single row in the essential dignities table
+    planet: str = Field(..., description="Planet name")
+    planet_en: str = Field(..., description="Planet name in English")
+    ruler: List[str] = Field(default_factory=list, description="Planets this planet rules")
+    exaltation: List[str] = Field(default_factory=list, description="Planets this planet exalts")
+    triplicity: List[str] = Field(default_factory=list, description="Planets in this planet's triplicity")
+    term: List[str] = Field(default_factory=list, description="Planets in this planet's term")
+    face: List[str] = Field(default_factory=list, description="Planets in this planet's face/decan")
+    detriment: List[str] = Field(default_factory=list, description="Planets this planet is detriment to")
+    fall: List[str] = Field(default_factory=list, description="Planets this planet is fall to")
+    score: int = Field(..., description="Total essential dignity score")
+
+class EssentialDignitiesTable(BaseModel):
+    # Complete essential dignities table for all planets
+    rows: List[EssentialDignityRow] = Field(..., description="Rows for each planet")
+    total_score: int = Field(..., description="Sum of all planet scores")
+
 class ChartInfo(BaseModel):
     # General chart information
     name: str
@@ -83,13 +109,13 @@ class BirthChartData(BaseModel):
     aspects: List[AspectInfo]
     elements: ElementBalance
     qualities: QualityBalance
+    dignities: EssentialDignitiesTable
 
 class BirthChartResponse(BaseModel):
     # Response for birth chart calculation
     success: bool = True
     chart_id: str = Field(..., description="Unique identifier for this chart")
     chart_data: BirthChartData
-    chart_svg: Optional[str] = Field(None, description="SVG visualization (base64 encoded)")
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class InterpretationResponse(BaseModel):
