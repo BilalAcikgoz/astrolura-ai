@@ -10,7 +10,7 @@ import sys
 
 from app.config import get_settings
 from app.api.v1.endpoints import birth_chart
-from app.api.models.response import ErrorResponse, HealthCheckResponse
+from app.api.models import ErrorResponse, HealthCheckResponse
 
 settings = get_settings()
 

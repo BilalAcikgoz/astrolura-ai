@@ -10,15 +10,14 @@ from app.core.astrology.constants import (
     Planet, ZodiacSign, AspectType, HouseSystem, Dignity,
     PLANET_NAMES, PLANET_SYMBOLS, ZODIAC_NAMES, ZODIAC_SYMBOLS,
     ZODIAC_ELEMENTS, ZODIAC_QUALITIES, ASPECT_NAMES, ASPECT_SYMBOLS,
-    ASPECT_NATURE, HOUSE_NAMES, HOUSE_SYSTEM_NAMES, PLANET_RULERSHIPS,
+    ASPECT_NATURE, HOUSE_NAMES, HOUSE_SYSTEM_NAMES, PLANET_DIGNITIES,
     get_zodiac_sign, get_degree_in_sign, get_planet_dignity, get_aspect,
-    get_triplicity_lord, get_term_lord, get_face_lord, PLANET_DIGNITIES
 )
-from app.core.geocoding.service import get_geocoding_service
-from app.api.models.response import (
+from app.core.astrology.dignity_tables import get_traditional_dignities
+from app.core.geocoding import get_geocoding_service
+from app.api.models import (
     BirthChartData, ChartInfo, LocationInfo, PlanetPosition,
-    HouseInfo, AspectInfo, ElementBalance, QualityBalance, DignityDistribution,
-    EssentialDignitiesTable, EssentialDignityRow
+    HouseInfo, AspectInfo, ElementBalance, QualityBalance, TraditionalDignityInfo
 )
 
 logger = logging.getLogger(__name__)
@@ -34,12 +33,12 @@ class BirthChartCalculator:
 
     def _format_degree(self, decimal_degree: float) -> str:
         """
-        Convert decimal degree to degrees and minutes format
+        Convert decimal degree to degrees and minutes format with high precision
         Example: 8.95 -> "8°57'"
         """
         degrees = int(decimal_degree)
-        minutes = int((decimal_degree - degrees) * 60)
-        return f"{degrees}°{minutes}'"
+        minutes = round((decimal_degree - degrees) * 60)
+        return f"{degrees}°{minutes:02d}'"
 
     def _format_speed(self, decimal_speed: float) -> str:
         """
@@ -82,7 +81,7 @@ class BirthChartCalculator:
                 location_info["timezone"]
             )
 
-            # Step 4: Calculate Julian Day
+            # Step 4: Calculate Julian Day with high precision
             julian_day = self._calculate_julian_day(utc_datetime)
 
             # Step 5: Calculate houses FIRST
@@ -96,27 +95,45 @@ class BirthChartCalculator:
             # Step 6: Calculate planet positions (with house assignments)
             planets = self._calculate_planets(julian_day, houses)
 
-            # Step 6.5: Add Ascendant and Midheaven to planets list
-            # These angles are used in element/quality calculations
+            # Step 6.5: Add only Ascendant and Midheaven to planets list (NOT Descendant and IC)
             planets.append(angles["ascendant"])
             planets.append(angles["midheaven"])
 
-            # Step 7: Calculate aspects
+            # Step 7: Calculate aspects (filtered)
             aspects = self._calculate_aspects(planets)
 
-            # Step 8: Calculate element and quality balance
+            # Step 8: Calculate element and quality balance - FIXED
             elements = self._calculate_element_balance(planets)
             qualities = self._calculate_quality_balance(planets)
 
-            # Step 8.5: Calculate essential dignities table (now called "dignities")
-            sun_data = next((p for p in planets if p.name == "Gunes"), None)
-            sun_longitude = sun_data.longitude if sun_data else 0.0
-            dignities = self._calculate_essential_dignities(planets, sun_longitude)
+            # Step 9: Calculate traditional dignities (asaletler) with scoring
+            is_day_chart = False
+            try:
+                # Güneş pozisyonunu 'planets' listesinden bul
+                sun_position = next((p for p in planets if p.name == "Gunes"), None)
+                
+                if sun_position is not None:
+                    # Geleneksel kural: Güneş 7-12. evler arasındaysa (ufkun üstünde) gündüz haritasıdır.
+                    if 7 <= sun_position.house <= 12:
+                        is_day_chart = True
+                    # Aksi halde 'is_day_chart' False (Gece) olarak kalır
+                    logger.info(f"Chart determined as {'DAY' if is_day_chart else 'NIGHT'} chart (Sun in house {sun_position.house}).")
+                else:
+                    # Bu durumun olmaması gerekir, ancak olursa logla
+                    logger.error("CRITICAL: 'Gunes' not found in planet list. Cannot determine day/night chart. Defaulting to NIGHT.")
+                    is_day_chart = False # Hata durumunda Gece'ye ayarla
+            
+            except Exception as e:
+                # Beklenmedik bir hata olursa logla ve Gece'ye ayarla
+                logger.error(f"Error determining day/night chart: {str(e)}. Defaulting to NIGHT.")
+                is_day_chart = False # Hata durumundaki "güvenli varsayım" 'Gece' olmalı
 
-            # Step 9: Generate chart ID
+            dignities = self._calculate_traditional_dignities(planets, is_day_chart=is_day_chart)
+
+            # Step 10: Generate chart ID
             chart_id = str(uuid.uuid4())
 
-            # Step 10: Assemble chart data
+            # Step 11: Assemble chart data
             chart_data = BirthChartData(
                 chart_info=ChartInfo(
                     name=name,
@@ -128,7 +145,7 @@ class BirthChartCalculator:
                     house_system=HOUSE_SYSTEM_NAMES[self._get_house_system_enum(house_system)],
                     julian_day=julian_day
                 ),
-                planets=planets,  # Already includes Ascendant and Midheaven at the end
+                planets=planets,
                 houses=houses,
                 aspects=aspects,
                 elements=elements,
@@ -144,6 +161,7 @@ class BirthChartCalculator:
             raise
 
     def _calculate_julian_day(self, dt: datetime) -> float:
+        """Calculate Julian Day with high precision"""
         return swe.julday(
             dt.year,
             dt.month,
@@ -170,12 +188,11 @@ class BirthChartCalculator:
         house_system: str
     ) -> Tuple[List[HouseInfo], Dict[str, PlanetPosition]]:
         """
-        FIX: Swiss Ephemeris cusps array is 0-indexed:
-        cusps[0] = House 1, cusps[11] = House 12
+        Calculate houses with high precision
         """
         house_system_enum = self._get_house_system_enum(house_system)
 
-        result = swe.houses(
+        result = swe.houses_ex(
             julian_day,
             latitude,
             longitude,
@@ -185,26 +202,26 @@ class BirthChartCalculator:
         cusps = result[0]  # 0-indexed array
         ascmc = result[1]
 
-        # Build houses list
+        # Build houses list with corrected precision
         houses = []
         for i in range(1, 13):
-            cusp_longitude = cusps[i - 1]  # FIX: cusps[0] is House 1!
+            cusp_longitude = cusps[i - 1]
             sign_enum = get_zodiac_sign(cusp_longitude)
             degree_in_sign = get_degree_in_sign(cusp_longitude)
 
             house_info = HouseInfo(
                 number=i,
                 name=HOUSE_NAMES[i],
-                cusp_longitude=round(cusp_longitude, 4),
+                cusp_longitude=round(cusp_longitude, 6),
                 sign=ZODIAC_NAMES[sign_enum],
                 sign_en=sign_enum.name.title(),
                 sign_symbol=ZODIAC_SYMBOLS[sign_enum],
-                degree_in_sign=round(degree_in_sign, 2),
+                degree_in_sign=round(degree_in_sign, 4),
                 degree_display=self._format_degree(degree_in_sign)
             )
             houses.append(house_info)
 
-        # Ascendant and Midheaven
+        # Ascendant and Midheaven with corrected precision
         asc_longitude = ascmc[0]
         mc_longitude = ascmc[1]
 
@@ -214,105 +231,50 @@ class BirthChartCalculator:
         asc_degree_in_sign = get_degree_in_sign(asc_longitude)
         mc_degree_in_sign = get_degree_in_sign(mc_longitude)
 
-        # Calculate Descendant (opposite of Ascendant)
-        dsc_longitude = (asc_longitude + 180) % 360
-        dsc_sign = get_zodiac_sign(dsc_longitude)
-        dsc_degree_in_sign = get_degree_in_sign(dsc_longitude)
-
-        # Calculate IC (opposite of Midheaven)
-        ic_longitude = (mc_longitude + 180) % 360
-        ic_sign = get_zodiac_sign(ic_longitude)
-        ic_degree_in_sign = get_degree_in_sign(ic_longitude)
-
-        ascendant = PlanetPosition(
-            name="Yukselen",
-            name_en="Ascendant",
-            symbol="ASC",
-            longitude=round(asc_longitude, 4),
-            latitude=0.0,
-            distance=0.0,
-            speed=0.0,
-            speed_display=self._format_speed(0.0),
-            sign=ZODIAC_NAMES[asc_sign],
-            sign_en=asc_sign.name.title(),
-            sign_symbol=ZODIAC_SYMBOLS[asc_sign],
-            degree_in_sign=round(asc_degree_in_sign, 2),
-            degree_display=self._format_degree(asc_degree_in_sign),
-            house=1,
-            retrograde=False,
-            dignity="neutral"
-        )
-
-        midheaven = PlanetPosition(
-            name="Orta Gogu",
-            name_en="Midheaven",
-            symbol="MC",
-            longitude=round(mc_longitude, 4),
-            latitude=0.0,
-            distance=0.0,
-            speed=0.0,
-            speed_display=self._format_speed(0.0),
-            sign=ZODIAC_NAMES[mc_sign],
-            sign_en=mc_sign.name.title(),
-            sign_symbol=ZODIAC_SYMBOLS[mc_sign],
-            degree_in_sign=round(mc_degree_in_sign, 2),
-            degree_display=self._format_degree(mc_degree_in_sign),
-            house=10,
-            retrograde=False,
-            dignity="neutral"
-        )
-
-        descendant = PlanetPosition(
-            name="Inen",
-            name_en="Descendant",
-            symbol="DSC",
-            longitude=round(dsc_longitude, 4),
-            latitude=0.0,
-            distance=0.0,
-            speed=0.0,
-            speed_display=self._format_speed(0.0),
-            sign=ZODIAC_NAMES[dsc_sign],
-            sign_en=dsc_sign.name.title(),
-            sign_symbol=ZODIAC_SYMBOLS[dsc_sign],
-            degree_in_sign=round(dsc_degree_in_sign, 2),
-            degree_display=self._format_degree(dsc_degree_in_sign),
-            house=7,
-            retrograde=False,
-            dignity="neutral"
-        )
-
-        ic = PlanetPosition(
-            name="Gok Alti",
-            name_en="Imum Coeli",
-            symbol="IC",
-            longitude=round(ic_longitude, 4),
-            latitude=0.0,
-            distance=0.0,
-            speed=0.0,
-            speed_display=self._format_speed(0.0),
-            sign=ZODIAC_NAMES[ic_sign],
-            sign_en=ic_sign.name.title(),
-            sign_symbol=ZODIAC_SYMBOLS[ic_sign],
-            degree_in_sign=round(ic_degree_in_sign, 2),
-            degree_display=self._format_degree(ic_degree_in_sign),
-            house=4,
-            retrograde=False,
-            dignity="neutral"
-        )
-
         angles = {
-            "ascendant": ascendant,
-            "midheaven": midheaven,
-            "descendant": descendant,
-            "ic": ic
+            "ascendant": PlanetPosition(
+                name="Yukselen",
+                name_en="Ascendant",
+                symbol="ASC",
+                longitude=round(asc_longitude, 6),
+                latitude=0.0,
+                distance=0.0,
+                speed=0.0,
+                speed_display="00°00'00\"",
+                sign=ZODIAC_NAMES[asc_sign],
+                sign_en=asc_sign.name.title(),
+                sign_symbol=ZODIAC_SYMBOLS[asc_sign],
+                degree_in_sign=round(asc_degree_in_sign, 4),
+                degree_display=self._format_degree(asc_degree_in_sign),
+                house=1,
+                retrograde=False,
+                dignity="neutral"
+            ),
+            "midheaven": PlanetPosition(
+                name="Orta Gogu",
+                name_en="Midheaven",
+                symbol="MC",
+                longitude=round(mc_longitude, 6),
+                latitude=0.0,
+                distance=0.0,
+                speed=0.0,
+                speed_display="00°00'00\"",
+                sign=ZODIAC_NAMES[mc_sign],
+                sign_en=mc_sign.name.title(),
+                sign_symbol=ZODIAC_SYMBOLS[mc_sign],
+                degree_in_sign=round(mc_degree_in_sign, 4),
+                degree_display=self._format_degree(mc_degree_in_sign),
+                house=10,
+                retrograde=False,
+                dignity="neutral"
+            )
         }
 
         return houses, angles
 
     def _get_planet_house(self, planet_longitude: float, houses: List[HouseInfo]) -> int:
         """
-        NEW: Determine which house a planet is in.
-        A planet is in a house if it's between that house's cusp and the next house's cusp.
+        Determine which house a planet is in based on its longitude
         """
         house_cusps = [h.cusp_longitude for h in houses]
         planet_long = planet_longitude % 360
@@ -333,8 +295,7 @@ class BirthChartCalculator:
 
     def _calculate_planets(self, julian_day: float, houses: List[HouseInfo]) -> List[PlanetPosition]:
         planet_positions = []
-        north_node_longitude = None
-        north_node_speed = None
+        north_node_data = None
 
         for planet_enum in Planet:
             try:
@@ -349,32 +310,35 @@ class BirthChartCalculator:
                 distance = result[2]
                 speed = result[3]
 
-                # Store North Node longitude and speed for South Node calculation
+                # Store North Node data for South Node calculation
                 if planet_enum == Planet.NORTH_NODE:
-                    north_node_longitude = longitude
-                    north_node_speed = speed
+                    north_node_data = {
+                        'longitude': longitude,
+                        'latitude': latitude,
+                        'distance': distance,
+                        'speed': speed
+                    }
 
                 sign_enum = get_zodiac_sign(longitude)
                 degree_in_sign = get_degree_in_sign(longitude)
                 is_retrograde = speed < 0
                 dignity = get_planet_dignity(planet_enum, sign_enum)
 
-                # FIX: Calculate which house the planet is in
                 planet_house = self._get_planet_house(longitude, houses)
 
                 planet_position = PlanetPosition(
                     name=PLANET_NAMES[planet_enum],
-                    name_en=planet_enum.name.title(),
+                    name_en=planet_enum.name.title().replace("_", " "),
                     symbol=PLANET_SYMBOLS[planet_enum],
-                    longitude=round(longitude, 4),
-                    latitude=round(latitude, 4),
-                    distance=round(distance, 4),
-                    speed=round(speed, 4),
+                    longitude=round(longitude, 6),
+                    latitude=round(latitude, 6),
+                    distance=round(distance, 6),
+                    speed=round(speed, 6),
                     speed_display=self._format_speed(speed),
                     sign=ZODIAC_NAMES[sign_enum],
                     sign_en=sign_enum.name.title(),
                     sign_symbol=ZODIAC_SYMBOLS[sign_enum],
-                    degree_in_sign=round(degree_in_sign, 2),
+                    degree_in_sign=round(degree_in_sign, 4),
                     degree_display=self._format_degree(degree_in_sign),
                     house=planet_house,
                     retrograde=is_retrograde,
@@ -387,32 +351,32 @@ class BirthChartCalculator:
                 logger.error(f"Error calculating {planet_enum.name}: {str(e)}")
                 continue
 
-        # Now calculate South Node (North Node + 180°)
-        if north_node_longitude is not None and north_node_speed is not None:
+        # Now calculate South Node (North Node + 180°) with same speed as North Node
+        if north_node_data is not None:
             try:
-                south_node_longitude = (north_node_longitude + 180) % 360
-                south_node_speed = north_node_speed  # Same speed as North Node
+                south_node_longitude = (north_node_data['longitude'] + 180) % 360
                 sign_enum = get_zodiac_sign(south_node_longitude)
                 degree_in_sign = get_degree_in_sign(south_node_longitude)
                 planet_house = self._get_planet_house(south_node_longitude, houses)
                 is_retrograde = south_node_speed < 0
 
+                # South Node has the same speed as North Node (it moves with it)
                 south_node = PlanetPosition(
                     name=PLANET_NAMES[Planet.SOUTH_NODE],
-                    name_en=Planet.SOUTH_NODE.name.title().replace("_", " "),
+                    name_en="South Node",
                     symbol=PLANET_SYMBOLS[Planet.SOUTH_NODE],
-                    longitude=round(south_node_longitude, 4),
-                    latitude=0.0,
-                    distance=0.0,
-                    speed=round(south_node_speed, 4),
-                    speed_display=self._format_speed(south_node_speed),
+                    longitude=round(south_node_longitude, 6),
+                    latitude=-north_node_data['latitude'],  # Opposite latitude
+                    distance=north_node_data['distance'],
+                    speed=north_node_data['speed'],  # Same speed as North Node!
+                    speed_display=self._format_speed(north_node_data['speed']),
                     sign=ZODIAC_NAMES[sign_enum],
                     sign_en=sign_enum.name.title(),
                     sign_symbol=ZODIAC_SYMBOLS[sign_enum],
-                    degree_in_sign=round(degree_in_sign, 2),
+                    degree_in_sign=round(degree_in_sign, 4),
                     degree_display=self._format_degree(degree_in_sign),
                     house=planet_house,
-                    retrograde=is_retrograde,
+                    retrograde=north_node_data['speed'] < 0,
                     dignity="neutral"
                 )
                 planet_positions.append(south_node)
@@ -422,7 +386,30 @@ class BirthChartCalculator:
         return planet_positions
 
     def _calculate_aspects(self, planets: List[PlanetPosition]) -> List[AspectInfo]:
+        """
+        Calculate aspects with filtering for major aspects only
+        """
         aspects = []
+        
+        # Only consider major aspects (similar to real astrology apps)
+        MAJOR_ASPECTS = {
+            AspectType.CONJUNCTION,
+            AspectType.SEXTILE,
+            AspectType.SQUARE,
+            AspectType.TRINE,
+            AspectType.OPPOSITION,
+        }
+        
+        # Only calculate aspects between main celestial bodies
+        # Exclude angles from aspect calculations or be very selective
+        ASPECT_BODIES = {
+            "Gunes", "Ay", "Merkur", "Venus", "Mars", 
+            "Jupiter", "Saturn", "Uranus", "Neptun", "Pluto",
+            "Kuzey Node", "Guney Node"
+        }
+        
+        # Special handling for angles
+        ANGLE_NAMES = {"Yukselen", "Orta Gogu"}
 
         # Major aspects only
         major_aspects = {
@@ -438,14 +425,15 @@ class BirthChartCalculator:
 
         # Create a reverse mapping from Turkish planet name to Planet enum
         planet_name_to_enum = {name: planet for planet, name in PLANET_NAMES.items()}
-        # Handle angles (they use default orbs)
-        planet_name_to_enum["Yukselen"] = None  # Ascendant
-        planet_name_to_enum["Orta Gogu"] = None  # Midheaven
 
         for i in range(len(planets)):
             for j in range(i + 1, len(planets)):
                 planet1 = planets[i]
                 planet2 = planets[j]
+
+                # Skip if both are angles
+                if planet1.name in ANGLE_NAMES and planet2.name in ANGLE_NAMES:
+                    continue
 
                 # Get planet enums for orb calculation
                 planet1_enum = planet_name_to_enum.get(planet1.name)
@@ -458,32 +446,43 @@ class BirthChartCalculator:
                     planet2_enum
                 )
 
-                # Round orb first, then filter: only major aspects with orb < 3
-                orb_rounded = round(orb, 2)
-                if aspect_type is not None and aspect_type in major_aspects and orb_rounded < MAX_ORB:
-                    aspect_info = AspectInfo(
-                        planet1=planet1.name,
-                        aspect=ASPECT_NAMES[aspect_type],
-                        aspect_en=aspect_type.name.title().replace("_", " "),
-                        aspect_symbol=ASPECT_SYMBOLS.get(aspect_type, ""),
-                        planet2=planet2.name,
-                        orb=orb_rounded,
-                        angle=aspect_type.value,
-                        nature=ASPECT_NATURE[aspect_type]
-                    )
-                    aspects.append(aspect_info)
+                # Only include major aspects with orb <= 3.0 degrees
+                if aspect_type is not None and aspect_type in MAJOR_ASPECTS:
+                    # Maximum orb is 3.0 degrees for all aspects
+                    max_orb = 3.0
 
-        logger.info(f"Calculated {len(aspects)} major aspects (orb < {MAX_ORB})")
+                    if orb <= max_orb:
+                        aspect_info = AspectInfo(
+                            planet1=planet1.name,
+                            aspect=ASPECT_NAMES[aspect_type],
+                            aspect_en=aspect_type.name.title().replace("_", " "),
+                            aspect_symbol=ASPECT_SYMBOLS.get(aspect_type, ""),
+                            planet2=planet2.name,
+                            orb=round(orb, 2),
+                            angle=aspect_type.value,
+                            nature=ASPECT_NATURE[aspect_type]
+                        )
+                        aspects.append(aspect_info)
+
+        logger.info(f"Calculated {len(aspects)} major aspects")
         return aspects
 
     def _calculate_element_balance(self, planets: List[PlanetPosition]) -> ElementBalance:
+        """
+        Calculate element balance using main 10 planets + Ascendant
+        Each gets 1 point for their sign's element
+        """
         element_counts = {"ates": 0, "toprak": 0, "hava": 0, "su": 0}
-
-        # Use 13 points: 10 planets + North Node + 2 angles (ASC, MC)
-        # Exclude: South Node (it's the opposite of North Node)
+        
+        # Count these: Sun through Pluto + Ascendant 
+        COUNTABLE_PLANETS = {
+            "Gunes", "Ay", "Merkur", "Venus", "Mars", 
+            "Jupiter", "Saturn", "Uranus", "Neptun", "Pluto",
+            "Yukselen"  # Include Ascendant
+        }
+        
         for planet in planets:
-            # Skip South Node
-            if planet.name == "Guney Node":
+            if planet.name not in COUNTABLE_PLANETS:
                 continue
 
             for sign_enum, sign_name in ZODIAC_NAMES.items():
@@ -496,21 +495,42 @@ class BirthChartCalculator:
         if total == 0:
             total = 1  # Prevent division by zero
 
+        # Round to 1 decimal but ensure they sum to 100%
+        percentages = {}
+        raw_percentages = {k: (v / total * 100) for k, v in element_counts.items()}
+        
+        # Round all but last
+        running_total = 0
+        for i, (k, v) in enumerate(raw_percentages.items()):
+            if i < len(raw_percentages) - 1:
+                percentages[k] = round(v, 1)
+                running_total += percentages[k]
+            else:
+                # Last one gets the remainder to ensure sum = 100
+                percentages[k] = round(100 - running_total, 1)
+
         return ElementBalance(
-            fire=round(element_counts["ates"] / total * 100, 1),
-            earth=round(element_counts["toprak"] / total * 100, 1),
-            air=round(element_counts["hava"] / total * 100, 1),
-            water=round(element_counts["su"] / total * 100, 1)
+            fire=percentages["ates"],
+            earth=percentages["toprak"],
+            air=percentages["hava"],
+            water=percentages["su"]
         )
 
     def _calculate_quality_balance(self, planets: List[PlanetPosition]) -> QualityBalance:
+        """
+        Calculate quality balance using main 10 planets + Ascendant
+        """
         quality_counts = {"oncu": 0, "sabit": 0, "degisken": 0}
-
-        # Use 13 points: 10 planets + North Node + 2 angles (ASC, MC)
-        # Exclude: South Node (it's the opposite of North Node)
+        
+        # Count these: Sun through Pluto + Ascendant
+        COUNTABLE_PLANETS = {
+            "Gunes", "Ay", "Merkur", "Venus", "Mars", 
+            "Jupiter", "Saturn", "Uranus", "Neptun", "Pluto",
+            "Yukselen"  # Include Ascendant
+        }
+        
         for planet in planets:
-            # Skip South Node
-            if planet.name == "Guney Node":
+            if planet.name not in COUNTABLE_PLANETS:
                 continue
 
             for sign_enum, sign_name in ZODIAC_NAMES.items():
@@ -523,148 +543,185 @@ class BirthChartCalculator:
         if total == 0:
             total = 1  # Prevent division by zero
 
+        # Round to 1 decimal but ensure they sum to 100%
+        percentages = {}
+        raw_percentages = {k: (v / total * 100) for k, v in quality_counts.items()}
+        
+        # Round all but last
+        running_total = 0
+        for i, (k, v) in enumerate(raw_percentages.items()):
+            if i < len(raw_percentages) - 1:
+                percentages[k] = round(v, 1)
+                running_total += percentages[k]
+            else:
+                # Last one gets the remainder to ensure sum = 100
+                percentages[k] = round(100 - running_total, 1)
+
         return QualityBalance(
-            cardinal=round(quality_counts["oncu"] / total * 100, 1),
-            fixed=round(quality_counts["sabit"] / total * 100, 1),
-            mutable=round(quality_counts["degisken"] / total * 100, 1)
+            cardinal=percentages["oncu"],
+            fixed=percentages["sabit"],
+            mutable=percentages["degisken"]
         )
 
-    def _calculate_dignity_distribution(self, planets: List[PlanetPosition]) -> DignityDistribution:
-        dignity_lists = {
-            "ruler": [],
-            "exalted": [],
-            "detriment": [],
-            "fall": [],
-            "neutral": []
+    def _calculate_traditional_dignities(
+        self, 
+        planets: List[PlanetPosition], 
+        is_day_chart: bool
+    ) -> List[TraditionalDignityInfo]:
+        """
+        Geleneksel asaletleri (asaletler) uygun puanlama sistemi ve 
+        gündüz/gece üçlü yöneticileri ile doğru bir şekilde hesaplar.
+        
+        Hata Düzeltmesi: Bu versiyon, dignity_tables'daki modern gezegen 
+        girdilerini (Uranus, Neptun, Pluto) yok sayarak, 
+        "Zarar", "Düşüş" ve "Yücelme" için SADECE geleneksel yöneticileri 
+        getiren manuel haritalar kullanır.
+        """
+        dignities_list = []
+        dignity_tables = get_traditional_dignities()
+
+        # Gezegen isimlerini ("Gunes") sembollere ("Sun" veya "☉" - constants dosyanızda ne varsa)
+        # dönüştürmek için harita
+        name_to_symbol = {
+            PLANET_NAMES[p_enum]: PLANET_SYMBOLS[p_enum]
+            for p_enum in PLANET_NAMES
+            if p_enum in PLANET_SYMBOLS
         }
 
-        # Only consider actual planets (exclude angles and nodes)
-        planet_list = ["Gunes", "Ay", "Merkur", "Venus", "Mars", "Jupiter", "Saturn", "Uranus", "Neptun", "Pluto"]
+        # --- YENİ (DÜZELTİLMİŞ) BÖLÜM: Geleneksel Haritalar ---
+        # Otomatik haritalama modern gezegenler yüzünden (örn: Aslan Zarar -> Uranüs) 
+        # hatalı sonuç veriyordu. Bu haritalar SADECE geleneksel yöneticileri kullanır.
+        
+        # Geleneksel Yücelme (Exaltation) Haritası
+        sign_to_exaltation_traditional = {
+            "Koc": "Gunes",
+            "Boga": "Ay",
+            "Basak": "Merkur",
+            "Balik": "Venus",
+            "Oglak": "Mars",
+            "Yengec": "Jupiter",
+            "Terazi": "Saturn"
+        }
+        
+        # Geleneksel Zarar (Detriment) Haritası
+        sign_to_detriment_traditional = {
+            "Kova": "Gunes",
+            "Oglak": "Ay",
+            "Yay": "Merkur",
+            "Balik": "Merkur",
+            "Koc": "Venus",
+            "Akrep": "Venus",
+            "Terazi": "Mars",
+            "Boga": "Mars",
+            "Ikizler": "Jupiter",
+            "Basak": "Jupiter",
+            "Yengec": "Saturn",
+            "Aslan": "Saturn"
+        }
+        
+        # Geleneksel Düşüş (Fall) Haritası
+        sign_to_fall_traditional = {
+            "Terazi": "Gunes",
+            "Akrep": "Ay",
+            "Balik": "Merkur",
+            "Basak": "Venus",
+            "Yengec": "Mars",
+            "Oglak": "Jupiter",
+            "Koc": "Saturn"
+        }
+        # --- YENİ BÖLÜM SONU ---
 
+        # Geleneksel astrolojide sadece 7 gezegen puan alır.
+        TRADITIONAL_PLANETS_FOR_SCORING = {
+            "Gunes", "Ay", "Merkur", "Venus", "Mars", "Jupiter", "Saturn"
+        }
+        
+        # Modern gezegenler dahil olmak üzere bu gezegenler için tabloyu oluştururuz
+        PLANETS_TO_DISPLAY = {
+            "Gunes", "Ay", "Merkur", "Venus", "Mars", 
+            "Jupiter", "Saturn", "Uranus", "Neptun", "Pluto"
+        }
+        
         for planet in planets:
-            if planet.name in planet_list:
-                dignity = planet.dignity
-                if dignity in dignity_lists:
-                    dignity_lists[dignity].append(planet.name_en)
-
-        return DignityDistribution(
-            ruler=dignity_lists["ruler"],
-            exalted=dignity_lists["exalted"],
-            detriment=dignity_lists["detriment"],
-            fall=dignity_lists["fall"],
-            neutral=dignity_lists["neutral"]
-        )
-
-    def _calculate_essential_dignities(self, planets: List[PlanetPosition], sun_longitude: float) -> EssentialDignitiesTable:
-        """
-        Calculate essential dignities table for all planets.
-        Shows which planet holds ruler/exaltation/triplicity/term/face/detriment/fall
-        for each planet's position, with scoring.
-        """
-        # Determine if day chart or night chart (Sun above or below horizon)
-        # For simplicity, we use Sun's position relative to IC/MC
-        # If Sun is in houses 7-12, it's a day chart; houses 1-6 is night chart
-        sun_data = next((p for p in planets if p.name == "Gunes"), None)
-        is_day_chart = sun_data and sun_data.house in [7, 8, 9, 10, 11, 12]
-
-        # Main planets to analyze - Classical 7 planets + modern planets (Uranus, Neptune, Pluto)
-        main_planets = [
-            Planet.SUN, Planet.MOON, Planet.MERCURY, Planet.VENUS, Planet.MARS,
-            Planet.JUPITER, Planet.SATURN, Planet.URANUS, Planet.NEPTUNE, Planet.PLUTO
-        ]
-
-        rows = []
-        total_score = 0
-
-        for planet_enum in main_planets:
-            # Find this planet's data in the planets list
-            planet_name_tr = PLANET_NAMES[planet_enum]
-            planet_data = next((p for p in planets if p.name == planet_name_tr), None)
-
-            if not planet_data:
+            if planet.name not in PLANETS_TO_DISPLAY:
                 continue
-
-            # Get sign and degree
-            sign_enum = get_zodiac_sign(planet_data.longitude)
-            degree_in_sign = get_degree_in_sign(planet_data.longitude)
-
-            # Initialize lists for each category
-            ruler_planets = []
-            exaltation_planets = []
-            triplicity_planets = []
-            term_planets = []
-            face_planets = []
-            detriment_planets = []
-            fall_planets = []
+            
+            planet_name = planet.name
+            planet_sign = planet.sign
+            planet_degree = planet.degree_in_sign
+            
             score = 0
-
-            # Find which planets hold each dignity at this sign/degree
-            # Ruler: Who rules this sign?
-            ruler = PLANET_RULERSHIPS.get(sign_enum)
-            if ruler:
-                ruler_planets.append(PLANET_SYMBOLS[ruler])
-                if ruler == planet_enum:
-                    score += 5
-
-            # Exaltation: Who is exalted in this sign?
-            for p, dignities in PLANET_DIGNITIES.items():
-                if dignities.get(sign_enum) == Dignity.EXALTED:
-                    exaltation_planets.append(PLANET_SYMBOLS[p])
-                    if p == planet_enum:
-                        score += 4
-
-            # Triplicity: Who is the triplicity lord?
-            triplicity_lord = get_triplicity_lord(sign_enum, is_day_chart)
-            if triplicity_lord:
-                triplicity_planets.append(PLANET_SYMBOLS[triplicity_lord])
-                if triplicity_lord == planet_enum:
-                    score += 3
-
-            # Term: Who is the term lord at this degree?
-            term_lord = get_term_lord(sign_enum, degree_in_sign)
-            if term_lord:
-                term_planets.append(PLANET_SYMBOLS[term_lord])
-                if term_lord == planet_enum:
-                    score += 2
-
-            # Face: Who is the face lord at this degree?
-            face_lord = get_face_lord(sign_enum, degree_in_sign)
-            if face_lord:
-                face_planets.append(PLANET_SYMBOLS[face_lord])
-                if face_lord == planet_enum:
-                    score += 1
-
-            # Detriment: Who is in detriment in this sign?
-            for p, dignities in PLANET_DIGNITIES.items():
-                if dignities.get(sign_enum) == Dignity.DETRIMENT:
-                    detriment_planets.append(PLANET_SYMBOLS[p])
-                    if p == planet_enum:
-                        score -= 5
-
-            # Fall: Who is in fall in this sign?
-            for p, dignities in PLANET_DIGNITIES.items():
-                if dignities.get(sign_enum) == Dignity.FALL:
-                    fall_planets.append(PLANET_SYMBOLS[p])
-                    if p == planet_enum:
-                        score -= 4
-
-            # Create row
-            row = EssentialDignityRow(
-                planet=planet_name_tr,
-                planet_en=PLANET_SYMBOLS[planet_enum],
-                ruler=ruler_planets,
-                exaltation=exaltation_planets,
-                triplicity=triplicity_planets,
-                term=term_planets,
-                face=face_planets,
-                detriment=detriment_planets,
-                fall=fall_planets,
+            dignity_details = {
+                "ruler": None,
+                "exaltation": None, 
+                "triplicity": None,
+                "term": None,
+                "face": None,
+                "detriment": None,
+                "fall": None
+            }
+            
+            # 1. Yönetici (Ruler) (+5) - Bu zaten geleneksel listeyi kullanıyordu
+            ruler_name = dignity_tables.rulerships.get(planet_sign)
+            dignity_details["ruler"] = name_to_symbol.get(ruler_name)
+            if ruler_name == planet_name and planet_name in TRADITIONAL_PLANETS_FOR_SCORING:
+                score += 5
+            
+            # 2. Yücelme (Exaltation) (+4) - DÜZELTİLDİ
+            exaltation_ruler_name = sign_to_exaltation_traditional.get(planet_sign) # <-- Düzeltilmiş haritayı kullan
+            dignity_details["exaltation"] = name_to_symbol.get(exaltation_ruler_name)
+            if exaltation_ruler_name == planet_name and planet_name in TRADITIONAL_PLANETS_FOR_SCORING:
+                score += 4
+            
+            # 3. Üçlü (Triplicity) (+3)
+            triplicity_ruler_name = dignity_tables.get_triplicity_ruler(planet_sign, is_day_chart)
+            dignity_details["triplicity"] = name_to_symbol.get(triplicity_ruler_name)
+            if triplicity_ruler_name == planet_name and planet_name in TRADITIONAL_PLANETS_FOR_SCORING:
+                score += 3
+            
+            # 4. Terim (Term) (+2)
+            term_ruler_name = dignity_tables.get_term_ruler(planet_sign, planet_degree)
+            dignity_details["term"] = name_to_symbol.get(term_ruler_name)
+            if term_ruler_name == planet_name and planet_name in TRADITIONAL_PLANETS_FOR_SCORING:
+                score += 2
+            
+            # 5. Dekan (Face) (+1)
+            face_ruler_name = dignity_tables.get_face_ruler(planet_sign, planet_degree)
+            dignity_details["face"] = name_to_symbol.get(face_ruler_name)
+            if face_ruler_name == planet_name and planet_name in TRADITIONAL_PLANETS_FOR_SCORING:
+                score += 1
+            
+            # 6. Zarar (Detriment) (-5) - DÜZELTİLDİ
+            detriment_ruler_name = sign_to_detriment_traditional.get(planet_sign) # <-- Düzeltilmiş haritayı kullan
+            dignity_details["detriment"] = name_to_symbol.get(detriment_ruler_name)
+            if detriment_ruler_name == planet_name and planet_name in TRADITIONAL_PLANETS_FOR_SCORING:
+                # Düzeltme: Puanlama sadece gezegenin kendisi zarardaysa yapılır.
+                # Önceki kod bunu yanlışlıkla yöneticiye bakarak yapıyordu.
+                if dignity_tables.is_in_detriment(planet_name, planet_sign):
+                    score -= 5
+            
+            # 7. Düşüş (Fall) (-4) - DÜZELTİLDİ
+            fall_ruler_name = sign_to_fall_traditional.get(planet_sign) # <-- Düzeltilmiş haritayı kullan
+            dignity_details["fall"] = name_to_symbol.get(fall_ruler_name)
+            if dignity_tables.is_in_fall(planet_name, planet_sign) and planet_name in TRADITIONAL_PLANETS_FOR_SCORING:
+                score -= 4
+            
+            # Create dignity info
+            dignity_info = TraditionalDignityInfo(
+                planet=planet.name,
+                planet_symbol=planet.symbol, # Bu, 'constants' dosyanızdan gelir (örn: "Sun" veya "☉")
+                ruler=dignity_details["ruler"],
+                exaltation=dignity_details["exaltation"],
+                triplicity=dignity_details["triplicity"],
+                term=dignity_details["term"],
+                face=dignity_details["face"],
+                detriment=dignity_details["detriment"],
+                fall=dignity_details["fall"],
                 score=score
             )
-            rows.append(row)
-            total_score += score
-
-        return EssentialDignitiesTable(rows=rows, total_score=total_score)
+            dignities_list.append(dignity_info)
+        
+        return dignities_list
 
 # Global calculator instance
 _calculator: Optional[BirthChartCalculator] = None
@@ -674,4 +731,3 @@ def get_calculator() -> BirthChartCalculator:
     if _calculator is None:
         _calculator = BirthChartCalculator()
     return _calculator
-

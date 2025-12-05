@@ -64,31 +64,17 @@ class QualityBalance(BaseModel):
     fixed: float = Field(..., description="Fixed quality percentage")
     mutable: float = Field(..., description="Mutable quality percentage")
 
-class DignityDistribution(BaseModel):
-    # Planetary dignity distribution in the chart
-    ruler: List[str] = Field(default_factory=list, description="Planets in rulership")
-    exalted: List[str] = Field(default_factory=list, description="Planets in exaltation")
-    detriment: List[str] = Field(default_factory=list, description="Planets in detriment")
-    fall: List[str] = Field(default_factory=list, description="Planets in fall")
-    neutral: List[str] = Field(default_factory=list, description="Planets in neutral dignity")
-
-class EssentialDignityRow(BaseModel):
-    # A single row in the essential dignities table
-    planet: str = Field(..., description="Planet name")
-    planet_en: str = Field(..., description="Planet name in English")
-    ruler: List[str] = Field(default_factory=list, description="Planets this planet rules")
-    exaltation: List[str] = Field(default_factory=list, description="Planets this planet exalts")
-    triplicity: List[str] = Field(default_factory=list, description="Planets in this planet's triplicity")
-    term: List[str] = Field(default_factory=list, description="Planets in this planet's term")
-    face: List[str] = Field(default_factory=list, description="Planets in this planet's face/decan")
-    detriment: List[str] = Field(default_factory=list, description="Planets this planet is detriment to")
-    fall: List[str] = Field(default_factory=list, description="Planets this planet is fall to")
-    score: int = Field(..., description="Total essential dignity score")
-
-class EssentialDignitiesTable(BaseModel):
-    # Complete essential dignities table for all planets
-    rows: List[EssentialDignityRow] = Field(..., description="Rows for each planet")
-    total_score: int = Field(..., description="Sum of all planet scores")
+class TraditionalDignityInfo(BaseModel):
+    planet: str = Field(..., description="Planet name in Turkish (row header)")
+    planet_symbol: str = Field(..., description="Planet symbol")
+    ruler: Optional[str] = Field(None, description="Planet symbol if in ruler dignity (+5)")
+    exaltation: Optional[str] = Field(None, description="Planet symbol if in exaltation (+4)")
+    triplicity: Optional[str] = Field(None, description="Planet symbol if in triplicity (+3)")
+    term: Optional[str] = Field(None, description="Planet symbol if in term (+2)")
+    face: Optional[str] = Field(None, description="Planet symbol if in face/decan (+1)")
+    detriment: Optional[str] = Field(None, description="Planet symbol if in detriment (-5)")
+    fall: Optional[str] = Field(None, description="Planet symbol if in fall (-4)")
+    score: int = Field(..., description="Total dignity score")
 
 class ChartInfo(BaseModel):
     # General chart information
@@ -109,7 +95,22 @@ class BirthChartData(BaseModel):
     aspects: List[AspectInfo]
     elements: ElementBalance
     qualities: QualityBalance
-    dignities: EssentialDignitiesTable
+    dignities: Optional[List[TraditionalDignityInfo]] = Field(default_factory=list, description="Traditional planetary dignities (asaletler)")
+
+    # Keep these for backward compatibility (they're included in planets list)
+    @property
+    def ascendant(self) -> Optional[PlanetPosition]:
+        for planet in self.planets:
+            if planet.name == "Yukselen":
+                return planet
+        return None
+    
+    @property
+    def midheaven(self) -> Optional[PlanetPosition]:
+        for planet in self.planets:
+            if planet.name == "Orta Gogu":
+                return planet
+        return None
 
 class BirthChartResponse(BaseModel):
     # Response for birth chart calculation

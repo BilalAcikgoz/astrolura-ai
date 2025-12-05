@@ -1,14 +1,15 @@
-from fastapi import APIRouter, HTTPException, status, Response
+from fastapi import APIRouter, HTTPException, status
 from loguru import logger
 from typing import Dict
-
-from app.api.models.request import BirthChartRequest, BirthChartInterpretRequest
-from app.api.models.response import (
+ 
+from app.api.models import (
+    BirthChartRequest,
+    BirthChartInterpretRequest,
     BirthChartResponse,
     InterpretationResponse
 )
-from app.core.astrology.calculator import get_calculator
-from app.core.geocoding.service import GeocodingError
+from app.core.astrology import get_calculator
+from app.core.geocoding import GeocodingError
 
 router = APIRouter()
 
