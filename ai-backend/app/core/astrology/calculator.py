@@ -175,7 +175,7 @@ class BirthChartCalculator:
         """
         house_system_enum = self._get_house_system_enum(house_system)
 
-        result = swe.houses(
+        result = swe.houses_ex(
             julian_day,
             latitude,
             longitude,
@@ -434,7 +434,7 @@ class BirthChartCalculator:
         }
 
         # Maximum orb for filtering
-        MAX_ORB = 3.0
+        MAX_ORB = 3.15
 
         # Create a reverse mapping from Turkish planet name to Planet enum
         planet_name_to_enum = {name: planet for planet, name in PLANET_NAMES.items()}
@@ -458,9 +458,9 @@ class BirthChartCalculator:
                     planet2_enum
                 )
 
-                # Round orb first, then filter: only major aspects with orb < 3
-                orb_rounded = round(orb, 2)
-                if aspect_type is not None and aspect_type in major_aspects and orb_rounded < MAX_ORB:
+                # Filter with raw orb first, then round for display (use <= not <)
+                if aspect_type is not None and aspect_type in major_aspects and orb <= MAX_ORB:
+                    orb_rounded = round(orb, 2)
                     aspect_info = AspectInfo(
                         planet1=planet1.name,
                         aspect=ASPECT_NAMES[aspect_type],
