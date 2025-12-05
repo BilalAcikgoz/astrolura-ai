@@ -210,3 +210,7 @@ __marimo__/
 logs/
 *.log
 
+# Docker volumes
+volumes/
+ai-backend/volumes/
+
