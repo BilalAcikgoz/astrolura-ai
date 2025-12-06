@@ -65,3 +65,6 @@ htmlcov/
 
 # Docker volumes
 volumes/
+
+ephe/
+*.se1
