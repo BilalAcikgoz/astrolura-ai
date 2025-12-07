@@ -2,13 +2,14 @@ from fastapi import APIRouter, HTTPException, status, Response
 from loguru import logger
 from typing import Dict
 
-from app.api.models.request import BirthChartRequest, BirthChartInterpretRequest
-from app.api.models.response import (
+from app.api.models import BirthChartRequest, BirthChartInterpretRequest
+from app.api.models import (
     BirthChartResponse,
     InterpretationResponse
 )
-from app.core.astrology.calculator import get_calculator
-from app.core.geocoding.service import GeocodingError
+from app.core.astrology import get_calculator
+from app.core.geocoding import GeocodingError
+from app.rag import get_rag_service_manager
 
 router = APIRouter()
 
@@ -92,13 +93,25 @@ async def interpret_birth_chart(request: BirthChartInterpretRequest):
         # Get chart data
         chart_data = chart_cache[request.chart_id]
 
-        # TODO: Implement RAG-powered interpretation
-        # For now, return a placeholder
-        interpretation = _generate_placeholder_interpretation(
-            chart_data,
-            request.interpretation_style,
-            request.language
-        )
+        # Get RAG service manager
+        rag_manager = get_rag_service_manager()
+
+        # Check if RAG services are available
+        if not rag_manager.is_connected:
+            logger.warning("RAG services not available, using placeholder interpretation")
+            interpretation = _generate_placeholder_interpretation(
+                chart_data,
+                request.interpretation_style,
+                request.language
+            )
+        else:
+            # Use RAG pipeline for interpretation
+            interpretation = await _generate_rag_interpretation(
+                rag_manager,
+                chart_data,
+                request.interpretation_style,
+                request.language
+            )
 
         logger.info(f"Successfully generated interpretation for chart {request.chart_id}")
 
@@ -118,6 +131,52 @@ async def interpret_birth_chart(request: BirthChartInterpretRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to interpret birth chart: {str(e)}"
         )
+
+
+async def _generate_rag_interpretation(
+    rag_manager,
+    chart_data: dict,
+    style: str,
+    language: str
+) -> str:
+    """Generate interpretation using RAG pipeline."""
+    try:
+        logger.info(f"Generating RAG interpretation for {chart_data['chart_info']['name']}")
+
+        # Get retrieval service
+        retrieval_service = rag_manager.get_retrieval_service(
+            top_k=5,
+            similarity_threshold=1.5  # L2 distance threshold
+        )
+
+        # Retrieve relevant context from vector database
+        logger.info("Retrieving context from knowledge base...")
+        results = retrieval_service.retrieve_context(
+            chart_data,
+            max_queries=12,
+            deduplicate=True
+        )
+
+        # Format context for LLM
+        context = retrieval_service.format_context(results, max_chunks=15)
+
+        logger.info(f"Retrieved {len(results)} relevant chunks for interpretation")
+
+        # Generate interpretation using LLM
+        generation_service = rag_manager.generation_service
+        interpretation = generation_service.generate_interpretation(
+            chart_data=chart_data,
+            context=context,
+            language=language
+        )
+
+        return interpretation
+
+    except Exception as e:
+        logger.error(f"RAG interpretation failed: {str(e)}", exc_info=True)
+        # Fallback to placeholder if RAG fails
+        logger.warning("Falling back to placeholder interpretation")
+        return _generate_placeholder_interpretation(chart_data, style, language)
 
 @router.get(
     "/birth-chart/{chart_id}",

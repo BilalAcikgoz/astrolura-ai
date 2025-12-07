@@ -140,4 +140,5 @@ class HealthCheckResponse(BaseModel):
     status: str = "ok"
     version: str
     environment: str
+    rag_status: Optional[str] = Field(default=None, description="RAG service connection status")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

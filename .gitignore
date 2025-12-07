@@ -66,5 +66,10 @@ htmlcov/
 # Docker volumes
 volumes/
 
+# Swiss
 ephe/
 *.se1
+
+# RAG Sources
+rag_sources/
+*.pdf

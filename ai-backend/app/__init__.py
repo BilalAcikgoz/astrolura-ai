@@ -1,6 +1,6 @@
-"""
-Astro-Fala AI Backend Application Package
-"""
-
 __version__ = "1.0.0"
-__author__ = "Astro-Fala Team"
+__author__ = "Bilal Açıkgöz"
+
+from app.config import Settings, get_settings
+
+__all__ = ["Settings", "get_settings"]

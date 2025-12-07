@@ -37,6 +37,7 @@ tenacity<=9.0.0  # For retry logic
 langchain==0.3.3
 langchain-community==0.3.2
 langchain-openai==0.2.2
+pypdf==5.1.0  # PDF parsing for document loading
 
 # Embeddings & NLP
 sentence-transformers==3.2.0
