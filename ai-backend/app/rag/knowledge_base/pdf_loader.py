@@ -4,7 +4,7 @@ from loguru import logger
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.schema import Document
 
-class PDFLoaderService:
+class AstrologyPDFLoaderService:
     # Service for loading PDF documents from the knowledge base. 
     # Extracts text content and metadata from astrology PDF files.
     def __init__(self, pdf_directory: str = "./rag_sources"):
@@ -149,5 +149,5 @@ class PDFLoaderService:
         return stats
 
 # Factory function to get a PDFLoaderService instance
-def get_pdf_loader(pdf_directory: str = "./rag_sources") -> PDFLoaderService:
-    return PDFLoaderService(pdf_directory=pdf_directory)
+def get_astrology_pdf_loader(pdf_directory: str = "./rag_sources") -> AstrologyPDFLoaderService:
+    return AstrologyPDFLoaderService(pdf_directory=pdf_directory)

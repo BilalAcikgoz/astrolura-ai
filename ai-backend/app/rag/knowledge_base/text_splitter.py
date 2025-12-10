@@ -4,7 +4,7 @@ from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import hashlib
 
-class TextSplitterService:
+class AstrologyTextSplitterService:
     # Service for splitting documents into chunks for vector storage.
     # Uses RecursiveCharacterTextSplitter to maintain semantic coherence.
     def __init__(
@@ -170,12 +170,12 @@ class TextSplitterService:
         return previews
 
 # Factory function to get a TextSplitterService instance.
-def get_text_splitter(
+def get_astrology_text_splitter(
     chunk_size: int = 1024,
     chunk_overlap: int = 200
-) -> TextSplitterService:
+) -> AstrologyTextSplitterService:
     
-    return TextSplitterService(
+    return AstrologyTextSplitterService(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap
     )

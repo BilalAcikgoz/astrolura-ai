@@ -1,11 +1,11 @@
 from app.rag.service_manager import (
-    RAGServiceManager,
-    ManagedRetrievalService,
-    get_rag_service_manager
+    AstrologyRAGServiceManager,
+    ManagedAstrologyRetrievalService,
+    get_astrology_rag_service_manager
 )
 
 __all__ = [
-    'RAGServiceManager',
-    'ManagedRetrievalService',
-    'get_rag_service_manager'
+    'AstrologyRAGServiceManager',
+    'ManagedAstrologyRetrievalService',
+    'get_astrology_rag_service_manager'
 ]

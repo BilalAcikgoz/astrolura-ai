@@ -1,18 +1,17 @@
 from typing import Optional
 from loguru import logger
 
-from app.rag.embeddings.service import EmbeddingService, get_embedding_service
+from app.rag.embeddings.service import AstrologyEmbeddingService, get_astrology_embedding_service
 from app.rag.knowledge_base.vector_store import MilvusVectorStore, get_vector_store
-from app.rag.retrieval.service import RetrievalService
-from app.rag.generation.service import GenerationService, get_generation_service
+from app.rag.retrieval.service import AstrologyRetrievalService
+from app.rag.generation.service import AstrologyGenerationService, get_astrology_generation_service
 
-
-class RAGServiceManager:
+class AstrologyRAGServiceManager:
     """
     Singleton manager for RAG services.
     Handles initialization, connection management, and cleanup.
     """
-    _instance: Optional['RAGServiceManager'] = None
+    _instance: Optional['AstrologyRAGServiceManager'] = None
     _initialized: bool = False
 
     def __new__(cls):
@@ -21,13 +20,13 @@ class RAGServiceManager:
         return cls._instance
 
     def __init__(self):
-        if not RAGServiceManager._initialized:
-            self._embedding_service: Optional[EmbeddingService] = None
+        if not AstrologyRAGServiceManager._initialized:
+            self._embedding_service: Optional[AstrologyEmbeddingService] = None
             self._vector_store: Optional[MilvusVectorStore] = None
-            self._retrieval_service: Optional[RetrievalService] = None
-            self._generation_service: Optional[GenerationService] = None
+            self._retrieval_service: Optional[AstrologyRetrievalService] = None
+            self._generation_service: Optional[AstrologyGenerationService] = None
             self._connected: bool = False
-            RAGServiceManager._initialized = True
+            AstrologyRAGServiceManager._initialized = True
 
     async def initialize(self) -> bool:
         """Initialize all RAG services and connect to Milvus."""
@@ -35,7 +34,7 @@ class RAGServiceManager:
             logger.info("Initializing RAG services...")
 
             # Initialize embedding service
-            self._embedding_service = get_embedding_service()
+            self._embedding_service = get_astrology_embedding_service()
             logger.info("Embedding service initialized")
 
             # Initialize vector store and connect
@@ -45,13 +44,15 @@ class RAGServiceManager:
             # Load collection if it exists
             try:
                 self._vector_store.load_collection()
-                logger.info("Vector store collection loaded")
-            except ValueError as e:
-                logger.warning(f"Collection not found or empty: {e}")
+                logger.info("Vector store collection loaded successfully")
+            except Exception as e:
+                logger.warning(f"Collection not found or could not be loaded: {e}")
                 logger.info("Run 'python scripts/ingest_pdfs.py' to populate the knowledge base")
+                # Mark as not connected if collection can't be loaded
+                self._connected = False
 
             # Initialize generation service
-            self._generation_service = get_generation_service()
+            self._generation_service = get_astrology_generation_service()
             logger.info("Generation service initialized")
 
             self._connected = True
@@ -82,7 +83,7 @@ class RAGServiceManager:
         return self._connected
 
     @property
-    def embedding_service(self) -> EmbeddingService:
+    def embedding_service(self) -> AstrologyEmbeddingService:
         if not self._embedding_service:
             raise RuntimeError("RAG services not initialized. Call initialize() first.")
         return self._embedding_service
@@ -94,7 +95,7 @@ class RAGServiceManager:
         return self._vector_store
 
     @property
-    def generation_service(self) -> GenerationService:
+    def generation_service(self) -> AstrologyGenerationService:
         if not self._generation_service:
             raise RuntimeError("RAG services not initialized. Call initialize() first.")
         return self._generation_service
@@ -103,12 +104,12 @@ class RAGServiceManager:
         self,
         top_k: int = 5,
         similarity_threshold: float = 0.7
-    ) -> 'ManagedRetrievalService':
+    ) -> 'ManagedAstrologyRetrievalService':
         """Get a retrieval service that uses managed connections."""
         if not self._connected:
             raise RuntimeError("RAG services not initialized. Call initialize() first.")
 
-        return ManagedRetrievalService(
+        return ManagedAstrologyRetrievalService(
             embedding_service=self._embedding_service,
             vector_store=self._vector_store,
             top_k=top_k,
@@ -116,7 +117,7 @@ class RAGServiceManager:
         )
 
 
-class ManagedRetrievalService:
+class ManagedAstrologyRetrievalService:
     """
     Retrieval service that uses pre-initialized connections.
     Unlike RetrievalService, this doesn't create its own connections.
@@ -124,7 +125,7 @@ class ManagedRetrievalService:
 
     def __init__(
         self,
-        embedding_service: EmbeddingService,
+        embedding_service: AstrologyEmbeddingService,
         vector_store: MilvusVectorStore,
         top_k: int = 5,
         similarity_threshold: float = 0.7
@@ -223,6 +224,9 @@ class ManagedRetrievalService:
         # Retrieve documents for each query
         all_results = []
         seen_chunk_ids = set()
+        total_searched = 0
+
+        logger.info(f"🔍 Starting RAG retrieval with {len(queries)} queries...")
 
         for i, query in enumerate(queries, 1):
             logger.debug(f"Query {i}/{len(queries)}: {query}")
@@ -235,6 +239,7 @@ class ManagedRetrievalService:
                 query_embedding=query_embedding,
                 top_k=self.top_k
             )
+            total_searched += len(results)
 
             # Filter by similarity threshold and deduplicate
             for result in results:
@@ -252,9 +257,16 @@ class ManagedRetrievalService:
         # Sort by score (lower is better for L2 distance)
         all_results.sort(key=lambda x: x['score'])
 
+        # Calculate some stats
+        avg_score = sum(r['score'] for r in all_results) / len(all_results) if all_results else 0
+
         logger.info(
-            f"Retrieved {len(all_results)} relevant documents "
-            f"from {len(queries)} queries"
+            f"📚 RAG Retrieval Complete:\n"
+            f"├─ Queries: {len(queries)}\n"
+            f"├─ Total Searched: {total_searched}\n"
+            f"├─ Relevant Chunks: {len(all_results)}\n"
+            f"├─ Unique Sources: {len(set(r['source_file'] for r in all_results))}\n"
+            f"└─ Avg Similarity Score: {avg_score:.4f}"
         )
 
         return all_results
@@ -291,12 +303,11 @@ Relevance: {1 - result['score']:.2%}
 
 
 # Global service manager instance
-_service_manager: Optional[RAGServiceManager] = None
+_service_manager: Optional[AstrologyRAGServiceManager] = None
 
-
-def get_rag_service_manager() -> RAGServiceManager:
+def get_astrology_rag_service_manager() -> AstrologyRAGServiceManager:
     """Get the global RAG service manager instance."""
     global _service_manager
     if _service_manager is None:
-        _service_manager = RAGServiceManager()
+        _service_manager = AstrologyRAGServiceManager()
     return _service_manager

@@ -1,3 +1,3 @@
-from app.rag.embeddings.service import EmbeddingService, get_embedding_service
+from app.rag.embeddings.service import AstrologyEmbeddingService, get_astrology_embedding_service
 
-__all__ = ["EmbeddingService", "get_embedding_service"]
+__all__ = ["AstrologyEmbeddingService", "get_astrology_embedding_service"]

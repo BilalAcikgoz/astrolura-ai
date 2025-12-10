@@ -6,7 +6,7 @@ import uuid
 import swisseph as swe
 
 from app import get_settings
-from app.core.astrology.constants import (
+from app.core.astrology.calculations.constants import (
     Planet, ZodiacSign, AspectType, HouseSystem, Dignity,
     PLANET_NAMES, PLANET_SYMBOLS, ZODIAC_NAMES, ZODIAC_SYMBOLS,
     ZODIAC_ELEMENTS, ZODIAC_QUALITIES, ASPECT_NAMES, ASPECT_SYMBOLS,
@@ -14,7 +14,7 @@ from app.core.astrology.constants import (
     get_zodiac_sign, get_degree_in_sign, get_planet_dignity, get_aspect,
     get_triplicity_lord, get_term_lord, get_face_lord, PLANET_DIGNITIES
 )
-from app.core.geocoding import get_geocoding_service
+from app.core.astrology.geocoding import get_geocoding_service
 from app.api.models import (
     BirthChartData, ChartInfo, LocationInfo, PlanetPosition,
     HouseInfo, AspectInfo, ElementBalance, QualityBalance, DignityDistribution,

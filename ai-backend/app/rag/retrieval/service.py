@@ -1,10 +1,10 @@
 from typing import List, Dict, Optional, Set
 from loguru import logger
 
-from app.rag.embeddings.service import get_embedding_service
+from app.rag.embeddings.service import get_astrology_embedding_service
 from app.rag.knowledge_base import get_vector_store
 
-class RetrievalService:
+class AstrologyRetrievalService:
     # Service for retrieving relevant astrological knowledge based on birth chart data
 
     def __init__(
@@ -13,7 +13,7 @@ class RetrievalService:
         similarity_threshold: float = 0.8
     ):
         # Initialize retrieval service with embedding and vector store services
-        self.embedding_service = get_embedding_service()
+        self.embedding_service = get_astrology_embedding_service()
         self.vector_store = get_vector_store()
         self.top_k = top_k
         self.similarity_threshold = similarity_threshold
@@ -256,11 +256,11 @@ Content:
 
 
 # Factory function to get a RetrievalService instance
-def get_retrieval_service(
+def get_astrology_retrieval_service(
     top_k: int = 5,
     similarity_threshold: float = 0.8
-) -> RetrievalService:
-    return RetrievalService(
+) -> AstrologyRetrievalService:
+    return AstrologyRetrievalService(
         top_k=top_k,
         similarity_threshold=similarity_threshold
     )

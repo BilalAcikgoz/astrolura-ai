@@ -7,9 +7,9 @@ from app.api.models import (
     BirthChartResponse,
     InterpretationResponse
 )
-from app.core.astrology import get_calculator
-from app.core.geocoding import GeocodingError
-from app.rag import get_rag_service_manager
+from app.core.astrology.calculations.calculator import get_calculator
+from app.core.astrology.geocoding import GeocodingError
+from app.rag import get_astrology_rag_service_manager
 
 router = APIRouter()
 
@@ -94,7 +94,7 @@ async def interpret_birth_chart(request: BirthChartInterpretRequest):
         chart_data = chart_cache[request.chart_id]
 
         # Get RAG service manager
-        rag_manager = get_rag_service_manager()
+        rag_manager = get_astrology_rag_service_manager()
 
         # Check if RAG services are available
         if not rag_manager.is_connected:
@@ -217,6 +217,10 @@ def _generate_placeholder_interpretation(
 ) -> str:
     # Generate placeholder interpretation. TODO: Replace with RAG-powered interpretation
     # Note: _style parameter reserved for future RAG implementation
+
+    # Find Ascendant in planets list
+    ascendant = next((p for p in chart_data['planets'] if p['name_en'] == 'Ascendant'), None)
+
     if language == "tr":
         interpretation = f"""# {chart_data['chart_info']['name']} - Doğum Haritası Yorumu
 
@@ -227,7 +231,7 @@ Bu yorum henüz yapay zeka tarafından oluşturulmamaktadır. RAG sistemi implem
 - **Doğum Tarihi**: {chart_data['chart_info']['birth_date']}
 - **Doğum Saati**: {chart_data['chart_info']['birth_time']}
 - **Doğum Yeri**: {chart_data['chart_info']['location']['city']}, {chart_data['chart_info']['location']['country']}
-- **Yükselen Burç**: {chart_data['ascendant']['sign']}
+- **Yükselen Burç**: {ascendant['sign'] if ascendant else 'N/A'}
 - **Güneş Burcu**: {chart_data['planets'][0]['sign']}
 - **Ay Burcu**: {chart_data['planets'][1]['sign']}
 
@@ -256,7 +260,7 @@ This is a placeholder interpretation. Once the RAG system is implemented, detail
 - **Birth Date**: {chart_data['chart_info']['birth_date']}
 - **Birth Time**: {chart_data['chart_info']['birth_time']}
 - **Birth Place**: {chart_data['chart_info']['location']['city']}, {chart_data['chart_info']['location']['country']}
-- **Rising Sign**: {chart_data['ascendant']['sign_en']}
+- **Rising Sign**: {ascendant['sign_en'] if ascendant else 'N/A'}
 - **Sun Sign**: {chart_data['planets'][0]['sign_en']}
 - **Moon Sign**: {chart_data['planets'][1]['sign_en']}
 

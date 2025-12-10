@@ -1,9 +1,8 @@
 from app.core.astrology.calculations.calculator import get_calculator, BirthChartCalculator
-from app.core.astrology.geocoding.service import get_geocoding_service, GeocodingService
+from app.core.astrology.calculations import constants
 
 __all__ = [
     "get_calculator",
     "BirthChartCalculator",
-    "get_geocoding_service",
-    "GeocodingService",
+    "constants",
 ]

@@ -9,9 +9,9 @@ class BirthChartRequest(BaseModel):
         json_schema_extra={
             "example": {
                 "name": "Bilal Acikgoz",
-                "birth_date": "1990-07-15",
-                "birth_time": "14:30",
-                "birth_place": "Istanbul, Turkey",
+                "birth_date": "1997-06-30",
+                "birth_time": "20:28",
+                "birth_place": "Ankara, Turkey",
                 "house_system": "placidus"
             }
         }

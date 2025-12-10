@@ -5,10 +5,33 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 import json
 
 from app.config import get_settings
-from app.rag.prompts import get_system_prompt
+from app.rag.prompts import get_astrology_system_prompt
 
+# OpenAI Pricing (per 1M tokens) - Updated as of December 2024
+MODEL_PRICING = {
+    "gpt-4o": {
+        "input": 2.50,   # $2.50 per 1M input tokens
+        "output": 10.00  # $10.00 per 1M output tokens
+    },
+    "gpt-4o-mini": {
+        "input": 0.150,  # $0.150 per 1M input tokens
+        "output": 0.600  # $0.600 per 1M output tokens
+    },
+    "gpt-4-turbo": {
+        "input": 10.00,
+        "output": 30.00
+    },
+    "gpt-4": {
+        "input": 30.00,
+        "output": 60.00
+    },
+    "gpt-3.5-turbo": {
+        "input": 0.50,   # $0.50 per 1M input tokens
+        "output": 1.50   # $1.50 per 1M output tokens
+    },
+}
 
-class GenerationService:
+class AstrologyGenerationService:
     # Service for generating astrological interpretations using LLM with RAG
 
     def __init__(
@@ -34,6 +57,31 @@ class GenerationService:
             f"Initialized GenerationService with model={self.model}, "
             f"temperature={self.temperature}, max_tokens={self.max_tokens}"
         )
+
+    def _calculate_cost(self, model: str, prompt_tokens: int, completion_tokens: int) -> Dict[str, float]:
+        """Calculate the cost of API call based on token usage."""
+        # Find pricing for the model (check for base model name)
+        pricing = None
+        for model_key in MODEL_PRICING:
+            if model.startswith(model_key):
+                pricing = MODEL_PRICING[model_key]
+                break
+
+        if not pricing:
+            # Default to gpt-4o-mini pricing if model not found
+            pricing = MODEL_PRICING["gpt-4o-mini"]
+            logger.warning(f"Model {model} not found in pricing table, using gpt-4o-mini pricing")
+
+        # Calculate costs (pricing is per 1M tokens)
+        input_cost = (prompt_tokens / 1_000_000) * pricing["input"]
+        output_cost = (completion_tokens / 1_000_000) * pricing["output"]
+        total_cost = input_cost + output_cost
+
+        return {
+            "input_cost": round(input_cost, 6),
+            "output_cost": round(output_cost, 6),
+            "total_cost": round(total_cost, 6)
+        }
 
     def create_user_prompt(
         self,
@@ -80,7 +128,7 @@ Lütfen yukarıdaki natal harita verilerini detaylı analiz et ve sistem talimat
         )
 
         # Get system prompt based on language
-        system_prompt = get_system_prompt(language)
+        system_prompt = get_astrology_system_prompt(language)
 
         # Create user prompt
         user_prompt = self.create_user_prompt(chart_data, context)
@@ -102,11 +150,23 @@ Lütfen yukarıdaki natal harita verilerini detaylı analiz et ve sistem talimat
 
             interpretation = response.choices[0].message.content
 
-            # Log token usage
+            # Log detailed token usage and cost
             usage = response.usage
+            cost_info = self._calculate_cost(
+                response.model,
+                usage.prompt_tokens,
+                usage.completion_tokens
+            )
+
             logger.info(
-                f"Generated interpretation: {usage.completion_tokens} tokens "
-                f"(total: {usage.total_tokens}, prompt: {usage.prompt_tokens})"
+                f"✨ LLM Generation Complete ✨\n"
+                f"├─ Model: {response.model}\n"
+                f"├─ Input Tokens: {usage.prompt_tokens:,}\n"
+                f"├─ Output Tokens: {usage.completion_tokens:,}\n"
+                f"├─ Total Tokens: {usage.total_tokens:,}\n"
+                f"├─ Input Cost: ${cost_info['input_cost']:.6f}\n"
+                f"├─ Output Cost: ${cost_info['output_cost']:.6f}\n"
+                f"└─ Total Cost: ${cost_info['total_cost']:.6f}"
             )
 
             return interpretation
@@ -117,8 +177,8 @@ Lütfen yukarıdaki natal harita verilerini detaylı analiz et ve sistem talimat
 
 
 # Factory function to get a GenerationService instance
-def get_generation_service(
+def get_astrology_generation_service(
     model: Optional[str] = None,
     temperature: Optional[float] = None
-) -> GenerationService:
-    return GenerationService(model=model, temperature=temperature)
+) -> AstrologyGenerationService:
+    return AstrologyGenerationService(model=model, temperature=temperature)

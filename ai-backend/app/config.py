@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     mapbox_api_key: Optional[str] = Field(default=None, alias="MAPBOX_API_KEY")
 
     # Swiss Ephemeris Configuration
-    ephe_path: str = Field(default="./ephe", alias="EPHE_PATH")
+    ephe_path: str = Field(default="./app/core/astrology/ephe", alias="EPHE_PATH")
 
     # Milvus Vector Database Configuration
     milvus_host: str = Field(default="localhost", alias="MILVUS_HOST")
@@ -42,9 +42,9 @@ class Settings(BaseSettings):
 
     # OpenAI Configuration
     openai_api_key: str = Field(alias="OPENAI_API_KEY")
-    openai_model: str = Field(default="gpt-4o", alias="OPENAI_MODEL")
+    openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
     openai_temperature: float = Field(default=0.7, alias="OPENAI_TEMPERATURE")
-    openai_max_tokens: int = Field(default=2000, alias="OPENAI_MAX_TOKENS")
+    openai_max_tokens: int = Field(default=8000, alias="OPENAI_MAX_TOKENS")
     openai_top_p: float = Field(default=0.9, alias="OPENAI_TOP_P")
     openai_frequency_penalty: float = Field(default=0.0, alias="OPENAI_FREQUENCY_PENALTY")
     openai_presence_penalty: float = Field(default=0.0, alias="OPENAI_PRESENCE_PENALTY")
@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     local_embedding_dimension: int = Field(default=384, alias="LOCAL_EMBEDDING_DIMENSION")
 
     # Cache Settings
-    cache_dir: str = Field(default="./cache", alias="CACHE_DIR")
+    cache_dir: str = Field(default="./app/rag/embeddings/cache", alias="CACHE_DIR")
     cache_ttl_seconds: int = Field(default=3600, alias="CACHE_TTL_SECONDS")
 
     # Rate Limiting
@@ -113,7 +113,6 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
-
 
 # Convenience function to get settings
 def get_settings() -> Settings:

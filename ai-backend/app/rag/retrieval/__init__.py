@@ -1,6 +1,6 @@
-from app.rag.retrieval.service import RetrievalService, get_retrieval_service
+from app.rag.retrieval.service import AstrologyRetrievalService, get_astrology_retrieval_service
 
 __all__ = [
-    'RetrievalService',
-    'get_retrieval_service'
+    'AstrologyRetrievalService',
+    'get_astrology_retrieval_service'
 ]

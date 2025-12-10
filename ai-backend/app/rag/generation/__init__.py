@@ -1,6 +1,6 @@
-from app.rag.generation.service import GenerationService, get_generation_service
+from app.rag.generation.service import AstrologyGenerationService, get_astrology_generation_service
 
 __all__ = [
-    'GenerationService',
-    'get_generation_service'
+    'AstrologyGenerationService',
+    'get_astrology_generation_service',
 ]

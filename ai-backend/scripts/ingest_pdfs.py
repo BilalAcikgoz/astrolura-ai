@@ -8,9 +8,9 @@ import time
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.rag.knowledge_base.pdf_loader import get_pdf_loader
-from app.rag.knowledge_base.text_splitter import get_text_splitter
-from app.rag.embeddings.service import get_embedding_service
+from app.rag.knowledge_base.pdf_loader import get_astrology_pdf_loader
+from app.rag.knowledge_base.text_splitter import get_astrology_text_splitter
+from app.rag.embeddings.service import get_astrology_embedding_service
 from app.rag.knowledge_base.vector_store import get_vector_store
 from rich.console import Console
 from rich.table import Table
@@ -82,12 +82,12 @@ def main():
     try:
         # Initialize services
         console.print("\n[yellow]Step 1: Initializing services...[/yellow]")
-        pdf_loader = get_pdf_loader()
-        text_splitter = get_text_splitter(
+        pdf_loader = get_astrology_pdf_loader(pdf_directory="./app/rag/knowledge_base/astrology-documents")
+        text_splitter = get_astrology_text_splitter(
             chunk_size=args.chunk_size,
             chunk_overlap=args.chunk_overlap
         )
-        embedding_service = get_embedding_service(batch_size=args.batch_size)
+        embedding_service = get_astrology_embedding_service(batch_size=args.batch_size)
         vector_store = get_vector_store()
 
         console.print("[green]✓ Services initialized[/green]")

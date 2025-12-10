@@ -1,6 +1,6 @@
 # System prompts for astrological birth chart interpretation
 
-TURKISH_SYSTEM_PROMPT = """Sen dünya çapında tanınmış, 30 yılı aşkın deneyime sahip profesyonel bir astrologsun.
+TURKISH_ASTROLOGY_SYSTEM_PROMPT = """Sen dünya çapında tanınmış, 30 yılı aşkın deneyime sahip profesyonel bir astrologsun.
 Doğum haritası yorumları konusunda derin bilgi ve uzmanlığa sahipsin. Görevin, verilen natal harita verilerini
 ve astroloji bilgi kaynaklarını kullanarak kişiye özel, derinlikli, içgörülü ve profesyonel bir yorum hazırlamak.
 
@@ -201,7 +201,7 @@ Yorumların özgün, kişiye özel, profesyonel, destekleyici ve içgörülü ol
 Her yorum, kişinin kendini daha iyi anlamasına ve potansiyelini gerçekleştirmesine yardımcı olmalı."""
 
 
-ENGLISH_SYSTEM_PROMPT = """You are a world-renowned professional astrologer with over 30 years of experience.
+ENGLISH_ASTROLOGY_SYSTEM_PROMPT = """You are a world-renowned professional astrologer with over 30 years of experience.
 You possess deep knowledge and expertise in birth chart interpretation. Your task is to create personalized,
 in-depth, insightful, and professional interpretations using the provided natal chart data and astrological knowledge sources.
 
@@ -402,8 +402,8 @@ Ensure your interpretations are original, personalized, professional, supportive
 Each interpretation should help the person better understand themselves and realize their potential."""
 
 
-def get_system_prompt(language: str = "tr") -> str:
+def get_astrology_system_prompt(language: str = "tr") -> str:
     # Get system prompt based on language
     if language.lower() == "en":
-        return ENGLISH_SYSTEM_PROMPT
-    return TURKISH_SYSTEM_PROMPT
+        return ENGLISH_ASTROLOGY_SYSTEM_PROMPT
+    return TURKISH_ASTROLOGY_SYSTEM_PROMPT

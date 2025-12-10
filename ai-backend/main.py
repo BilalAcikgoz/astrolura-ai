@@ -11,7 +11,7 @@ import sys
 from app.config import get_settings
 from app.api.v1.endpoints import birth_chart
 from app.api.models import ErrorResponse, HealthCheckResponse
-from app.rag import get_rag_service_manager
+from app.rag import get_astrology_rag_service_manager
 
 settings = get_settings()
 
@@ -58,7 +58,7 @@ async def lifespan(app: FastAPI):
     loguru_logger.info(f"Debug mode: {settings.debug}")
 
     # Initialize RAG services
-    rag_manager = get_rag_service_manager()
+    rag_manager = get_astrology_rag_service_manager()
     rag_initialized = await rag_manager.initialize()
     if rag_initialized:
         loguru_logger.info("RAG services initialized successfully")
@@ -132,7 +132,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 # Health check endpoint
 @app.get("/health", response_model=HealthCheckResponse, tags=["System"])
 async def health_check():
-    rag_manager = get_rag_service_manager()
+    rag_manager = get_astrology_rag_service_manager()
     return HealthCheckResponse(
         status="ok",
         version=settings.app_version,

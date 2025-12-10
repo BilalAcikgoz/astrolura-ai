@@ -10,7 +10,14 @@ from pathlib import Path
 
 from app.config import get_settings
 
-class EmbeddingService:
+# OpenAI Embedding Pricing (per 1M tokens) - Updated as of December 2024
+EMBEDDING_PRICING = {
+    "text-embedding-3-small": 0.020,   # $0.020 per 1M tokens
+    "text-embedding-3-large": 0.130,   # $0.130 per 1M tokens
+    "text-embedding-ada-002": 0.100,   # $0.100 per 1M tokens
+}
+
+class AstrologyEmbeddingService:
     # Service for generating embeddings using OpenAI's embedding models.
     # Supports batch processing, caching, and retry logic.
     def __init__(
@@ -40,6 +47,21 @@ class EmbeddingService:
             f"dimension={self.dimension}, batch_size={self.batch_size}"
         )
 
+    def _calculate_embedding_cost(self, model: str, total_tokens: int) -> float:
+        """Calculate the cost of embedding API call based on token usage."""
+        # Find pricing for the model
+        pricing = EMBEDDING_PRICING.get(model)
+
+        if not pricing:
+            # Default to text-embedding-3-small pricing if model not found
+            pricing = EMBEDDING_PRICING["text-embedding-3-small"]
+            logger.warning(f"Model {model} not found in pricing table, using text-embedding-3-small pricing")
+
+        # Calculate cost (pricing is per 1M tokens)
+        cost = (total_tokens / 1_000_000) * pricing
+
+        return round(cost, 6)
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10)
@@ -53,6 +75,17 @@ class EmbeddingService:
             )
 
             embeddings = [item.embedding for item in response.data]
+
+            # Log token usage and cost
+            if hasattr(response, 'usage') and response.usage:
+                total_tokens = response.usage.total_tokens
+                cost = self._calculate_embedding_cost(response.model, total_tokens)
+
+                logger.debug(
+                    f"🔢 Embedding API Call: model={response.model}, "
+                    f"texts={len(texts)}, tokens={total_tokens:,}, cost=${cost:.6f}"
+                )
+
             return embeddings
 
         except Exception as e:
@@ -86,6 +119,8 @@ class EmbeddingService:
         # Generate embeddings for multiple texts in batches.
         all_embeddings = []
         total_batches = (len(texts) + self.batch_size - 1) // self.batch_size
+        total_cached = 0
+        total_new = 0
 
         logger.info(f"Embedding {len(texts)} texts in {total_batches} batches...")
 
@@ -106,6 +141,7 @@ class EmbeddingService:
                     cached = self._get_cached_embedding(text)
                     if cached is not None:
                         batch_embeddings.append(cached)
+                        total_cached += 1
                         continue
 
                 # Need to embed this text
@@ -115,6 +151,7 @@ class EmbeddingService:
             # Embed texts that weren't cached
             if texts_to_embed:
                 new_embeddings = self._call_embedding_api(texts_to_embed)
+                total_new += len(texts_to_embed)
 
                 # Cache new embeddings
                 if use_cache:
@@ -127,7 +164,10 @@ class EmbeddingService:
 
             all_embeddings.extend(batch_embeddings)
 
-        logger.info(f"Successfully generated {len(all_embeddings)} embeddings")
+        logger.info(
+            f"✅ Embedding complete: {len(all_embeddings)} total "
+            f"({total_cached} cached, {total_new} new)"
+        )
         return all_embeddings
 
     def embed_documents(
@@ -238,9 +278,9 @@ class EmbeddingService:
         logger.info(f"Cleared {len(cache_files)} cached embeddings")
 
 # Factory function to get an EmbeddingService instance.
-def get_embedding_service(
+def get_astrology_embedding_service(
     model: Optional[str] = None,
     batch_size: int = 100
-) -> EmbeddingService:
+) -> AstrologyEmbeddingService:
     
-    return EmbeddingService(model=model, batch_size=batch_size)
+    return AstrologyEmbeddingService(model=model, batch_size=batch_size)
