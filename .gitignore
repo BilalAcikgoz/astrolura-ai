@@ -75,4 +75,5 @@ rag_sources/
 knowledge_base/
 knowledge_base/astrology-documents/
 *.pdf
+data/
 
