@@ -166,19 +166,97 @@ Key environment variables in `.env`:
 
 ```bash
 # OpenAI
-OPENAI_API_KEY=your_key_here
-OPENAI_MODEL=gpt-4o
+# ========================================
+# Application Settings
+# ========================================
+APP_NAME=astrolura-ai Backend
+APP_VERSION=1.0.0
+DEBUG=True
+ENVIRONMENT=development
+LOG_LEVEL=INFO
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000
 
-# Embeddings
-EMBEDDING_MODEL=text-embedding-3-small
+# ========================================
+# Server Settings
+# ========================================
+HOST=0.0.0.0
+PORT=8000
+WORKERS=4
+
+# ========================================
+# Geocoding & Ephemeris
+# ========================================
+GEOCODING_PROVIDER=nominatim
+EPHE_PATH=./src/astrology/ephe
+
+# ========================================
+# OpenRouter API Configuration
+# ========================================
+OPENROUTER_API_KEY=your-key-here
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+
+# ========================================
+# LLM Configuration
+# ========================================
+LLM_MODEL=google/gemini-2.5-flash-lite
+LLM_MAX_COMPLETION_TOKENS=16000
+LLM_TIMEOUT=120
+LLM_MAX_RETRIES=3
+LLM_TEMPERATURE=0.7
+LLM_TOP_P=0.9
+LLM_FREQUENCY_PENALTY=0.0
+LLM_PRESENCE_PENALTY=0.0
+
+# ========================================
+# Embedding Configuration
+# ========================================
+EMBEDDING_MODEL=openai/text-embedding-3-small
 EMBEDDING_DIMENSION=1536
+EMBEDDING_BATCH_SIZE=50
+EMBEDDING_MAX_TOKENS=8191
+EMBEDDING_RATE_LIMIT_PAUSE=0.1
 
-# Milvus
+# ========================================
+# MILVUS Vector Database Configuration
+# ========================================
 MILVUS_HOST=localhost
-MILVUS_PORT=19530
+MILVUS_PORT=19531
+MILVUS_DATABASE=astrolura_db
+MILVUS_BIRTH_CHART_COLLECTION=birthchart_documents
+MILVUS_TRANSIT_CHART_COLLECTION=transitchart_documents
+MILVUS_INDEX_TYPE=HNSW
+MILVUS_METRIC_TYPE=COSINE
+MILVUS_HNSW_M=16
+MILVUS_HNSW_EF_CONSTRUCTION=256
+MILVUS_HNSW_EF_SEARCH=200
 
-# Geocoding
-GEOCODING_PROVIDER=nominatim  # or google, mapbox
+# ========================================
+# RAG Pipeline Configuration
+# ========================================
+SEARCH_TOP_K=5
+SIMILARITY_THRESHOLD=0.5
+MAX_CONTEXT_CHUNKS=15
+MAX_QUERIES=12
+
+# ========================================
+# Cache Settings
+# ========================================
+CACHE_DIR=./cache
+CACHE_TTL_SECONDS=3600
+
+# ========================================
+# Rate Limiting
+# ========================================
+RATE_LIMIT_ENABLED=True
+RATE_LIMIT_REQUESTS_PER_MINUTE=60
+RATE_LIMIT_REQUESTS_PER_DAY=1000
+
+# ========================================
+# Logging
+# ========================================
+LOG_FILE=logs/app.log
+LOG_ROTATION=10 MB
+LOG_RETENTION=30 days
 ```
 
 ## Development Roadmap
