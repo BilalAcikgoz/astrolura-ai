@@ -259,37 +259,6 @@ LOG_ROTATION=10 MB
 LOG_RETENTION=30 days
 ```
 
-## Development Roadmap
-
-### ✅ Phase 1: Core Calculation (Completed)
-- [x] Project setup
-- [x] Swiss Ephemeris integration
-- [x] Geocoding service
-- [x] Birth chart calculation
-- [x] API endpoints
-- [x] Request/response validation
-
-### 🔄 Phase 2: RAG System (In Progress)
-- [ ] Knowledge base creation
-- [ ] Embedding generation
-- [ ] Vector store (Milvus) integration
-- [ ] RAG retrieval pipeline
-- [ ] LLM interpretation
-- [ ] Prompt engineering
-
-### 📋 Phase 3: Enhancements (Planned)
-- [ ] SVG chart visualization
-- [ ] Caching with Redis
-- [ ] Rate limiting
-- [ ] User authentication
-- [ ] Database integration
-- [ ] Chart comparison (synastry)
-
-### 📋 Phase 4: Fortune Telling (Planned)
-- [ ] Tarot card module
-- [ ] Coffee fortune module
-- [ ] Dream interpretation
-
 ## Testing
 
 ```bash
